@@ -7,17 +7,42 @@ from datetime import datetime
 import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="DSVI - Security CRM", layout="wide", page_icon="🛡️", initial_sidebar_state="auto")
+st.set_page_config(
+    page_title="DSVI - Security CRM", 
+    layout="wide", 
+    page_icon="🛡️",
+    initial_sidebar_state="auto"
+)
 
-# --- CSS DEFINITIVO: OCULTA GITHUB, DEJA EL MENÚ LIBRE Y ESTILO DSVI ---
+# --- CSS DE ALTA PRECISIÓN: OCULTA GITHUB, PERO DEJA EL MENÚ LIBRE ---
 st.markdown("""
     <style>
-    [data-testid="stToolbar"] { display: none !important; }
-    .stAppDeployButton { display: none !important; }
-    header[data-testid="stHeader"] { background-color: rgba(0,0,0,0) !important; color: white !important; }
-    button[data-testid="stBaseButton-headerNoPadding"] { color: white !important; visibility: visible !important; display: block !important; }
+    /* 1. Ocultar botones de la derecha (GitHub, Share, Deploy) */
+    [data-testid="stToolbar"], .stAppDeployButton {
+        display: none !important;
+    }
+    
+    /* 2. El Header DEBE ser visible para que el botón de menú funcione en móvil */
+    header[data-testid="stHeader"] {
+        background-color: rgba(0,0,0,0) !important;
+        display: flex !important;
+        justify-content: flex-start !important;
+    }
+
+    /* 3. Forzar visibilidad y color del botón de menú (hamburguesa) */
+    header button {
+        color: white !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+    
+    /* 4. Quitar el footer "Made with Streamlit" */
     footer {visibility: hidden !important;}
-    .block-container { padding-top: 3rem !important; }
+
+    /* 5. Espacio superior para que el logo no choque con el botón */
+    .block-container {
+        padding-top: 2rem !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -27,11 +52,13 @@ def check_password():
         st.session_state.authenticated = False
     if st.session_state.authenticated:
         return True
+    
     st.markdown("""
         <style> .logo-text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 900; 
         font-size: clamp(80px, 15vw, 120px); letter-spacing: -5px; color: #FFFFFF; text-align: center; margin-top: 80px; } </style>
         <div class="logo-text">DSVI</div>
     """, unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
@@ -44,7 +71,7 @@ def check_password():
                     st.error("❌ Clave incorrecta")
     return False
 
-# --- VALIDACIÓN ---
+# --- SISTEMA PRINCIPAL ---
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
@@ -86,13 +113,15 @@ if check_password():
     if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
+    
+    st.sidebar.markdown("---")
     meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
     menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
     if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 
     # --- DASHBOARD ---
     if menu == "📊 Dashboard":
-        st.title("Panel de Control Estratégico")
+        st.title("Panel de Control")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
         faltante = max(0, meta_usd - recaudado)
         c1, c2, c3 = st.columns(3)
@@ -139,7 +168,6 @@ if check_password():
                     with col_r:
                         st.write(f"📓 **Contexto:** {row['contexto']}")
                         st.markdown(f"🚀 **Próximo Paso:** :orange[{row['proximos_pasos']}]")
-                        st.caption(f"📅 Registrado: {row.get('fecha_registro','-')}")
                 else:
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
@@ -148,7 +176,7 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos']); u_ctx = st.text_area("Contexto", row['contexto'])
-                        if st.form_submit_button("💾 GUARDAR"):
+                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
                             target_id = str(row['id'])
                             df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas]
                             if save_data(df): st.rerun()
