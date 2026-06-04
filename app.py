@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# --- CSS DE ALTA PRECISIÓN: OCULTA GITHUB, PERO DEJA EL MENÚ LIBRE ---
+# --- CSS DE PRECISIÓN: OCULTA GITHUB Y FUERZA EL MENÚ EN CELULARES ---
 st.markdown("""
     <style>
     /* 1. Ocultar botones de la derecha (GitHub, Share, Deploy) */
@@ -22,26 +22,25 @@ st.markdown("""
         display: none !important;
     }
     
-    /* 2. El Header DEBE ser visible para que el botón de menú funcione en móvil */
+    /* 2. Asegurar visibilidad del header para el botón de menú */
     header[data-testid="stHeader"] {
+        visibility: visible !important;
         background-color: rgba(0,0,0,0) !important;
-        display: flex !important;
-        justify-content: flex-start !important;
     }
 
-    /* 3. Forzar visibilidad y color del botón de menú (hamburguesa) */
-    header button {
+    /* 3. Forzar que el botón de menú (hamburguesa) sea BLANCO y clickeable */
+    button[data-testid="stBaseButton-headerNoPadding"] {
         color: white !important;
         visibility: visible !important;
-        opacity: 1 !important;
+        display: block !important;
     }
     
     /* 4. Quitar el footer "Made with Streamlit" */
     footer {visibility: hidden !important;}
 
-    /* 5. Espacio superior para que el logo no choque con el botón */
+    /* 5. Espacio superior para evitar solapamientos */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 3.5rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -74,6 +73,7 @@ def check_password():
 # --- SISTEMA PRINCIPAL ---
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
+    
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
     ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
 
@@ -115,33 +115,41 @@ if check_password():
         st.rerun()
     
     st.sidebar.markdown("---")
-    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
-    menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
-    if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
+    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
+    menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline", "🆕 Registro"])
+    if st.sidebar.button("🔄 Sincronizar", use_container_width=True): st.cache_data.clear(); st.rerun()
 
     # --- DASHBOARD ---
     if menu == "📊 Dashboard":
-        st.title("Panel de Control")
+        st.title("Panel de Control Estratégico")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
         faltante = max(0, meta_usd - recaudado)
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {faltante:,.0f}")
-        c3.metric("TOTAL CONTACTOS", len(df))
+        c3.metric("CONTACTOS", len(df))
         
         st.markdown("---")
-        fig = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
-            gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#2ecc71"}, 'bgcolor': "rgba(0,0,0,0)"},
-            title={'text': "Avance General"}))
-        fig.update_layout(height=350, margin=dict(l=60, r=60, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
-        st.plotly_chart(fig, use_container_width=True)
+        col_gauge, col_resp = st.columns([1, 1.2])
+        with col_gauge:
+            fig = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
+                gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#2ecc71"}, 'bgcolor': "rgba(0,0,0,0)"},
+                title={'text': "Avance General"}))
+            fig.update_layout(height=350, margin=dict(l=60, r=60, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col_resp:
+            st.subheader("USD por Responsable")
+            resp_money = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
+            if not resp_money.empty:
+                st.plotly_chart(px.bar(resp_money, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3498db']), use_container_width=True)
 
-        st.subheader("🏆 Donaciones Confirmadas")
+        st.subheader("🏆 Tabla de Honor (Confirmados)")
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
         st.dataframe(df_honor, use_container_width=True, hide_index=True)
 
     # --- PIPELINE ---
-    elif menu == "👥 Pipeline Operativo":
+    elif menu == "👥 Pipeline":
         st.title("Gestión de Prospectos")
         search = st.text_input("🔍 Buscar por cualquier campo...").lower()
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
@@ -150,10 +158,10 @@ if check_password():
             emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
             with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['estado']} | {row['responsable']}"):
                 
-                c_head1, c_head2 = st.columns([2, 1])
-                with c_head1:
+                c_h1, c_h2 = st.columns([2, 1])
+                with c_h1:
                     st.markdown(f"💰 **Sugerido:** USD {float(row['monto_sugerido']):,.0f} | **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
-                with c_head2:
+                with c_h2:
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
                     st.markdown(f"[![WA](https://img.shields.io/badge/WhatsApp-25D366?style=flat&logo=whatsapp&logoColor=white)]({wa_url})")
 
@@ -164,10 +172,12 @@ if check_password():
                     with col_l:
                         st.write(f"📞 **Tel:** {row['telefono']}")
                         st.write(f"💼 **Rubro:** {row['rubro']}")
-                        st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
+                        st.write(f"🏠 **Resid:** {row['residencia']}")
+                        st.write(f"👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
                     with col_r:
                         st.write(f"📓 **Contexto:** {row['contexto']}")
-                        st.markdown(f"🚀 **Próximo Paso:** :orange[{row['proximos_pasos']}]")
+                        st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
+                        st.caption(f"📅 Reg: {row.get('fecha_registro','-')}")
                 else:
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
@@ -176,7 +186,7 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos']); u_ctx = st.text_area("Contexto", row['contexto'])
-                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
+                        if st.form_submit_button("💾 GUARDAR"):
                             target_id = str(row['id'])
                             df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas]
                             if save_data(df): st.rerun()
@@ -185,7 +195,7 @@ if check_password():
                         if save_data(df): st.rerun()
 
     # --- NUEVO ---
-    elif menu == "🆕 Nuevo Registro":
+    elif menu == "🆕 Registro":
         st.subheader("Cargar Nuevo Prospecto")
         with st.form("n_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
@@ -196,4 +206,4 @@ if check_password():
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": datetime.now().strftime("%Y-%m-%d"), "telefono": "-", "rubro": "-", "contexto": ctx, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-" }])
-                    if save_data(pd.concat([df, new_row], ignore_index=True)): st.success(f"¡{n} registrado!"); st.rerun()
+                    if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
