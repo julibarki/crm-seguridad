@@ -8,45 +8,45 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI - Security CRM", 
+    page_title="DSVI - CRM", 
     layout="wide", 
     page_icon="🛡️",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="expanded"
 )
 
-# --- CSS DE PRECISIÓN QUIRÚRGICA: MANTIENE EL MENÚ, BORRA TODO LO DEMÁS ---
+# --- CSS DE ALTA FIDELIDAD: OCULTA GITHUB, PROTEGE MENÚ ---
 st.markdown("""
     <style>
-    /* 1. Ocultar SOLAMENTE los botones de la derecha (GitHub, Share, Deploy, Menú) */
-    [data-testid="stToolbar"], 
-    .stAppDeployButton, 
-    header [data-testid="stHeader"] div:nth-child(2) {
+    /* 1. Ocultar botones de la derecha (GitHub, Share, Deploy) por su ID único */
+    [data-testid="stToolbar"], [data-testid="stDecoration"], .stAppDeployButton {
         display: none !important;
+        column-gap: 0 !important;
     }
     
-    /* 2. Asegurar que el HEADER sea transparente pero CLICKABLE para el menú */
-    header[data-testid="stHeader"] {
+    /* 2. Asegurar que el HEADER sea transparente pero permita clicks */
+    header {
         background-color: rgba(0,0,0,0) !important;
-        visibility: visible !important;
     }
 
-    /* 3. Forzar el color BLANCO del botón de menú (hamburguesa) para que se vea */
+    /* 3. FORZAR QUE EL BOTÓN DE MENÚ (HAMBURGUESA) SEA BLANCO Y VISIBLE */
     button[data-testid="stBaseButton-headerNoPadding"] {
         color: white !important;
         visibility: visible !important;
+        display: flex !important;
+        opacity: 1 !important;
     }
     
-    /* 4. Quitar el pie de página de Streamlit */
+    /* 4. Quitar el pie de página */
     footer {visibility: hidden !important;}
 
-    /* 5. Espacio superior para que el contenido no tape el botón arriba */
+    /* 5. Ajuste de margen superior */
     .block-container {
-        padding-top: 3rem !important;
+        padding-top: 2.5rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE LOGIN ---
+# --- FUNCIÓN DE LOGIN DSVI ---
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -62,8 +62,8 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            password_input = st.text_input("Ingresa la clave de acceso:", type="password")
-            if st.button("Ingresar", use_container_width=True):
+            password_input = st.text_input("Clave de Acceso:", type="password")
+            if st.button("Entrar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
                     st.session_state.authenticated = True
                     st.rerun()
@@ -99,17 +99,16 @@ if check_password():
             conn.update(data=dataframe.astype(str))
             st.cache_data.clear()
             return True
-        except Exception as e:
-            st.error(f"Error: {e}"); return False
+        except: return False
 
     def make_whatsapp_link(phone, name):
         clean_phone = ''.join(filter(str.isdigit, str(phone)))
-        msg = urllib.parse.quote(f"Hola {name}, ¿cómo estás? Te contacto de DSVI...")
+        msg = urllib.parse.quote(f"Hola {name}, te contacto de DSVI...")
         return f"https://wa.me/{clean_phone}?text={msg}"
 
     df = load_data()
 
-    # --- SIDEBAR ---
+    # --- NAVEGACIÓN ---
     st.sidebar.title("🛡️ CRM DSVI")
     if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.authenticated = False
@@ -117,10 +116,10 @@ if check_password():
     
     st.sidebar.markdown("---")
     meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
-    menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline", "🆕 Registro"])
-    if st.sidebar.button("🔄 Sincronizar", use_container_width=True): st.cache_data.clear(); st.rerun()
+    menu = st.sidebar.radio("Ir a:", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Registrar Nuevo"])
+    if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 
-    # --- DASHBOARD ---
+    # --- VISTA: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.title("Panel de Control Estratégico")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
@@ -128,7 +127,7 @@ if check_password():
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {faltante:,.0f}")
-        c3.metric("TOTAL CONTACTOS", len(df))
+        c3.metric("CONTACTOS", len(df))
         
         st.markdown("---")
         col_gauge, col_resp = st.columns([1, 1.2])
@@ -149,10 +148,10 @@ if check_password():
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
         st.dataframe(df_honor, use_container_width=True, hide_index=True)
 
-    # --- PIPELINE ---
-    elif menu == "👥 Pipeline":
+    # --- VISTA: PIPELINE ---
+    elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
-        search = st.text_input("🔍 Buscar...").lower()
+        search = st.text_input("🔍 Buscar por cualquier campo...").lower()
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
         
         for idx, row in df_f.iterrows():
@@ -166,7 +165,7 @@ if check_password():
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
                     st.markdown(f"[![WA](https://img.shields.io/badge/WhatsApp-25D366?style=flat&logo=whatsapp&logoColor=white)]({wa_url})")
 
-                is_edit = st.toggle("✏️ Editar Ficha", key=f"ed_{row['id']}")
+                is_edit = st.toggle("✏️ Editar Ficha Completa", key=f"ed_{row['id']}")
                 if not is_edit:
                     st.markdown("---")
                     col_l, col_r = st.columns(2)
@@ -178,7 +177,6 @@ if check_password():
                     with col_r:
                         st.write(f"📓 **Contexto:** {row['contexto']}")
                         st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
-                        st.caption(f"📅 Reg: {row.get('fecha_registro','-')}")
                 else:
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
@@ -187,7 +185,7 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos']); u_ctx = st.text_area("Contexto", row['contexto'])
-                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
+                        if st.form_submit_button("💾 GUARDAR"):
                             target_id = str(row['id'])
                             df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas]
                             if save_data(df): st.rerun()
@@ -195,13 +193,14 @@ if check_password():
                         df = df[df['id'] != str(row['id'])]
                         if save_data(df): st.rerun()
 
-    # --- NUEVO ---
-    elif menu == "🆕 Registro":
+    # --- VISTA: NUEVO ---
+    elif menu == "🆕 Registrar Nuevo":
         st.subheader("Cargar Nuevo Prospecto")
         with st.form("n_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             n = c1.text_input("Nombre *"); a = c2.text_input("Apellido")
-            r = c1.selectbox("Asignar Responsable", LISTA_RESPONSABLES); s = c2.number_input("Sugerido (USD)", value=0.0)
+            r = c1.selectbox("Asignar Responsable", LISTA_RESPONSABLES)
+            s = c2.number_input("Monto Sugerido (USD)", value=0.0)
             ctx = st.text_area("Notas de contexto")
             if st.form_submit_button("🚀 Crear Donante"):
                 if n:
