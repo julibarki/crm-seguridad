@@ -8,7 +8,7 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="DSVI - Security CRM", layout="wide", page_icon="🛡️")
 
-# --- FUNCIÓN DE LOGIN (SOLO AFECTA LA ENTRADA) ---
+# --- FUNCIÓN DE LOGIN ---
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -16,48 +16,38 @@ def check_password():
     if st.session_state.authenticated:
         return True
 
-    # Estilo para el logo DSVI y pantalla de login
+    # Estilo para el logo DSVI minimalista en blanco
     st.markdown("""
         <style>
         .logo-text {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             font-weight: 900;
-            font-size: 80px;
+            font-size: 100px;
             letter-spacing: -5px;
-            color: #1E3A8A;
+            color: #FFFFFF;
             text-align: center;
-            margin-bottom: -20px;
-            margin-top: 50px;
-        }
-        .subtitle-text {
-            font-size: 18px;
-            color: #6B7280;
-            text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 20px;
+            margin-top: 80px;
         }
         </style>
         <div class="logo-text">DSVI</div>
-        <div class="subtitle-text">SECURITY PROJECT SYSTEM</div>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            st.markdown("### Acceso Restringido")
-            password_input = st.text_input("Contraseña:", type="password")
-            if st.button("Ingresar al Sistema"):
+            password_input = st.text_input("Acceso Protegido - Contraseña:", type="password")
+            if st.button("Ingresar"):
                 if password_input == st.secrets["auth"]["password"]:
                     st.session_state.authenticated = True
                     st.rerun()
                 else:
-                    st.error("❌ Contraseña no válida")
+                    st.error("❌ Contraseña incorrecta")
     return False
 
 # --- VALIDACIÓN DE ACCESO ---
 if check_password():
     
-    # --- TODO EL SISTEMA SE MANTIENE IDENTICO ABAJO ---
-
     # --- CONEXIÓN ---
     conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -98,20 +88,20 @@ if check_password():
     df = load_data()
 
     # --- SIDEBAR ---
-    st.sidebar.title("🛡️ Recaudación Pro")
+    st.sidebar.title("🛡️ CRM Recaudación")
     if st.sidebar.button("🚪 Cerrar Sesión"):
         st.session_state.authenticated = False
         st.rerun()
 
     meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
-    menu = st.sidebar.radio("Navegación", ["📊 Dashboard Ejecutivo", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
-    if st.sidebar.button("🔄 Sincronizar Ahora"):
+    menu = st.sidebar.radio("Navegación", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
+    if st.sidebar.button("🔄 Sincronizar"):
         st.cache_data.clear()
         st.rerun()
 
     # --- VISTA: DASHBOARD ---
-    if menu == "📊 Dashboard Ejecutivo":
-        st.title("Panel de Control de Recaudación")
+    if menu == "📊 Dashboard":
+        st.title("Panel de Control")
         if df.empty or "nombre" not in df.columns:
             st.warning("No hay registros en la base de datos.")
         else:
@@ -122,7 +112,7 @@ if check_password():
             c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
             c2.metric("EN PIPELINE", f"USD {pipeline_negoc:,.0f}")
             c3.metric("FALTANTE META", f"USD {faltante:,.0f}")
-            c4.metric("TOTAL CONTACTOS", len(df))
+            c4.metric("CONTACTOS", len(df))
             st.markdown("---")
             col_gauge, col_stats = st.columns([1, 1.2])
             with col_gauge:
@@ -169,7 +159,8 @@ if check_password():
                     if not is_edit:
                         c1, c2 = st.columns(2)
                         with c1:
-                            st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
+                            st.write(f"📞 **Tel:** {row['telefono']}")
+                            st.write(f"💼 **Rubro:** {row['rubro']}")
                             st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
                         with c2:
                             st.write(f"📓 **Contexto:** {row['contexto']}")
