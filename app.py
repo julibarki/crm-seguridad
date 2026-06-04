@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI - CRM Elite", 
+    page_title="DSVI - CRM Elite v6.0", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -17,19 +17,22 @@ st.set_page_config(
 # --- ESTILO DSVI Y AJUSTES VISUALES ---
 st.markdown("""
     <style>
-    /* Ocultar footer */
     footer {visibility: hidden !important;}
-    
-    /* Estilo para métricas */
     [data-testid="stMetricValue"] { font-size: 28px !important; font-weight: 800 !important; }
-    
-    /* Ajuste de margen general */
     .block-container { padding-top: 2rem !important; }
-
-    /* Efecto para el icono de WhatsApp */
     .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
+    /* Estrellas doradas */
+    .star-rating { color: #FBBF24; font-weight: bold; font-size: 18px; }
     </style>
 """, unsafe_allow_html=True)
+
+# --- UTILITARIO DE ESTRELLAS ---
+def render_stars(rating):
+    try:
+        r = int(float(rating))
+        return "⭐" * r if r > 0 else "---"
+    except:
+        return "---"
 
 # --- FUNCIÓN DE LOGIN ---
 def check_password():
@@ -37,13 +40,11 @@ def check_password():
         st.session_state.authenticated = False
     if st.session_state.authenticated:
         return True
-    
     st.markdown("""
         <style> .logo-text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 900; 
         font-size: 100px; letter-spacing: -5px; color: #FFFFFF; text-align: center; margin-top: 80px; } </style>
         <div class="logo-text">DSVI</div>
     """, unsafe_allow_html=True)
-    
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
@@ -57,21 +58,19 @@ def check_password():
                     st.error("❌ Clave incorrecta")
     return False
 
-# --- SISTEMA ---
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
-    
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
     ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
-    VALORES_METRICAS = ["Baja", "Media", "Alta", "Muy Alta"]
 
     def load_data():
         try:
             data = conn.read(ttl=0)
             if data is None or data.empty: return pd.DataFrame()
             data.columns = [str(c).strip() for c in data.columns]
+            # Asegurar nuevas columnas Sergio con valor inicial 3
             for m in ["ascendencia", "capacidad", "red_contactos"]:
-                if m not in data.columns: data[m] = "Media"
+                if m not in data.columns: data[m] = "3"
             for col in ['monto_confirmado', 'monto_sugerido']:
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
             for col in data.columns:
@@ -93,13 +92,13 @@ if check_password():
     def make_whatsapp_link(phone, name):
         clean_phone = ''.join(filter(str.isdigit, str(phone)))
         if not clean_phone or clean_phone == "-": return None
-        msg = urllib.parse.quote(f"Hola {name}, ¿cómo estás? Te contacto de DSVI por el Proyecto de Seguridad...")
+        msg = urllib.parse.quote(f"Hola {name}, ¿cómo estás? Te contacto de DSVI...")
         return f"https://wa.me/{clean_phone}?text={msg}"
 
     df = load_data()
 
     # --- SIDEBAR ---
-    st.sidebar.title("🛡️ CRM DSVI")
+    st.sidebar.title("🛡️ CRM DSVI Elite")
     if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
@@ -107,21 +106,20 @@ if check_password():
     menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline Operativo", "🔎 Análisis Consultoría", "🆕 Registro Nuevo"])
     if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 
-    # --- VISTA: DASHBOARD ---
+    # --- DASHBOARD ---
     if menu == "📊 Dashboard":
-        st.title("Panel de Control Estratégico")
+        st.title("Panel Ejecutivo")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
-        faltante = max(0, meta_usd - recaudado)
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
-        c2.metric("META FALTANTE", f"USD {faltante:,.0f}")
-        c3.metric("TOTAL CONTACTOS", len(df))
+        c2.metric("META FALTANTE", f"USD {max(0, meta_usd - recaudado):,.0f}")
+        c3.metric("CONTACTOS", len(df))
         st.markdown("---")
         col_g, col_r = st.columns([1, 1.2])
         with col_g:
             fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
                 gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
-                title={'text': "Avance vs Meta"}))
+                title={'text': "Progreso"}))
             fig_g.update_layout(height=350, margin=dict(l=40, r=40, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_g, use_container_width=True)
         with col_r:
@@ -133,10 +131,10 @@ if check_password():
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
         st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")})
 
-    # --- VISTA: PIPELINE ---
+    # --- PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
-        search = st.text_input("🔍 Buscar por cualquier campo...").lower()
+        search = st.text_input("🔍 Buscar...").lower()
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
         
         for idx, row in df_f.iterrows():
@@ -146,18 +144,14 @@ if check_password():
                 c_h1, c_h2 = st.columns([2, 1])
                 with c_h1:
                     st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
-                    st.markdown(f"⭐ **Asc:** {row['ascendencia']} | 💰 **Cap:** {row['capacidad']} | 🌐 **Red:** {row['red_contactos']}")
+                    # RENDER DE ESTRELLAS DE SERGIO
+                    st.markdown(f"⭐ **Asc:** {render_stars(row['ascendencia'])} | 💰 **Cap:** {render_stars(row['capacidad'])} | 🌐 **Red:** {render_stars(row['red_contactos'])}")
                 with c_h2:
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
                     if wa_url:
-                        # ICONO DE WHATSAPP PROFESIONAL
-                        st.markdown(f"""
-                            <a href="{wa_url}" target="_blank">
-                                <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="35" height="35" class="wa-icon">
-                            </a>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f'<a href="{wa_url}" target="_blank"><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="35" class="wa-icon"></a>', unsafe_allow_html=True)
 
-                if st.toggle("Editar Ficha", key=f"ed_{row['id']}"):
+                if st.toggle("✏️ Editar", key=f"ed_{row['id']}"):
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
                         u_nom = f1.text_input("Nombre", row['nombre']); u_ape = f2.text_input("Apellido", row['apellido']); u_tel = f3.text_input("Teléfono", row['telefono'])
@@ -165,26 +159,35 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos']); u_ctx = st.text_area("Contexto", row['contexto'])
+                        # CALIFICACIÓN POR ESTRELLAS EN EDICIÓN
                         st.markdown("---")
-                        fs1, fs2, fs3 = st.columns(3)
-                        u_asc = fs1.selectbox("Ascendencia", VALORES_METRICAS, index=VALORES_METRICAS.index(row['ascendencia']) if row['ascendencia'] in VALORES_METRICAS else 1)
-                        u_cap = fs2.selectbox("Capacidad Econ.", VALORES_METRICAS, index=VALORES_METRICAS.index(row['capacidad']) if row['capacidad'] in VALORES_METRICAS else 1)
-                        u_red = fs3.selectbox("Red de Contactos", VALORES_METRICAS, index=VALORES_METRICAS.index(row['red_contactos']) if row['red_contactos'] in VALORES_METRICAS else 1)
-                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
+                        st.markdown("**Calificación Estratégica (Escala 1 a 5)**")
+                        s_c1, s_c2, s_c3 = st.columns(3)
+                        u_asc = s_c1.slider("Ascendencia", 1, 5, int(float(row['ascendencia'])) if row['ascendencia'].isdigit() else 3, key=f"s1_{row['id']}")
+                        u_cap = s_c2.slider("Capacidad Econ.", 1, 5, int(float(row['capacidad'])) if row['capacidad'].isdigit() else 3, key=f"s2_{row['id']}")
+                        u_red = s_c3.slider("Red de Contactos", 1, 5, int(float(row['red_contactos'])) if row['red_contactos'].isdigit() else 3, key=f"s3_{row['id']}")
+                        
+                        if st.form_submit_button("💾 GUARDAR"):
                             target_id = str(row['id'])
-                            df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos','ascendencia','capacidad','red_contactos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas, u_asc, u_cap, u_red]
+                            df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos','ascendencia','capacidad','red_contactos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas, str(u_asc), str(u_cap), str(u_red)]
                             if save_data(df): st.rerun()
                     if st.button("🗑️ ELIMINAR", key=f"del_{row['id']}"):
                         df = df[df['id'] != str(row['id'])]
                         if save_data(df): st.rerun()
                 else:
                     st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
-                    st.write(f"📓 **Contexto:** {row['contexto']}")
 
-    # --- VISTA: ANALISIS ---
+    # --- VISTA: CONSULTORIA ---
     elif menu == "🔎 Análisis Consultoría":
         st.title("Métricas de Priorización")
-        st.dataframe(df[['nombre', 'apellido', 'ascendencia', 'capacidad', 'red_contactos', 'monto_sugerido', 'responsable']], use_container_width=True, hide_index=True)
+        st.markdown("Tabla diseñada para el trabajo estratégico de Sergio.")
+        df_sergio = df.copy()
+        # Transformamos números a estrellas para la tabla
+        df_sergio['⭐ Ascendencia'] = df_sergio['ascendencia'].apply(render_stars)
+        df_sergio['💰 Capacidad'] = df_sergio['capacidad'].apply(render_stars)
+        df_sergio['🌐 Red'] = df_sergio['red_contactos'].apply(render_stars)
+        
+        st.dataframe(df_sergio[['nombre', 'apellido', '⭐ Ascendencia', '💰 Capacidad', '🌐 Red', 'monto_sugerido', 'responsable']], use_container_width=True, hide_index=True)
 
     # --- VISTA: NUEVO ---
     elif menu == "🆕 Registro Nuevo":
@@ -194,11 +197,14 @@ if check_password():
             n = c1.text_input("Nombre *"); a = c2.text_input("Apellido")
             r = c1.selectbox("Asignar Responsable", LISTA_RESPONSABLES); s = c2.number_input("Sugerido (USD)", value=0.0)
             st.markdown("---")
-            s1, s2, s3 = st.columns(3)
-            asc = s1.selectbox("Ascendencia", VALORES_METRICAS, index=1); cap = s2.selectbox("Capacidad Econ.", VALORES_METRICAS, index=1); red = s3.selectbox("Red de Contactos", VALORES_METRICAS, index=1)
+            st.markdown("**Calificación Inicial Sergio (1 a 5)**")
+            s_1, s_2, s_3 = st.columns(3)
+            asc = s_1.select_slider("Ascendencia", options=[1,2,3,4,5], value=3)
+            cap = s_2.select_slider("Capacidad Econ.", options=[1,2,3,4,5], value=3)
+            red = s_3.select_slider("Red de Contactos", options=[1,2,3,4,5], value=3)
             ctx = st.text_area("Notas de contexto")
             if st.form_submit_button("🚀 Crear Donante"):
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
-                    new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": datetime.now().strftime("%Y-%m-%d"), "telefono": "-", "rubro": "-", "contexto": ctx, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "ascendencia": asc, "capacidad": cap, "red_contactos": red }])
+                    new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": datetime.now().strftime("%Y-%m-%d"), "telefono": "-", "rubro": "-", "contexto": ctx, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "ascendencia": str(asc), "capacidad": str(cap), "red_contactos": str(red) }])
                     if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
