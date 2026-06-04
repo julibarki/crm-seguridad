@@ -8,6 +8,20 @@ from datetime import datetime
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="DSVI - Security CRM", layout="wide", page_icon="🛡️")
 
+# --- BLOQUEO TOTAL DE BARRAS DE STREAMLIT (GITHUB, MENÚS, ETC) ---
+st.markdown("""
+    <style>
+    /* Oculta el header de Streamlit */
+    header {visibility: hidden !important;}
+    /* Oculta el botón de Deploy y el menú de GitHub */
+    .stAppDeployButton {display:none !important;}
+    #MainMenu {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
+    /* Quita el espacio extra arriba */
+    .block-container {padding-top: 0rem !important;}
+    </style>
+""", unsafe_allow_html=True)
+
 # --- FUNCIÓN DE LOGIN ---
 def check_password():
     if "authenticated" not in st.session_state:
@@ -16,7 +30,7 @@ def check_password():
     if st.session_state.authenticated:
         return True
 
-    # Estilo para el logo DSVI minimalista en blanco
+    # Diseño del logo DSVI minimalista en blanco
     st.markdown("""
         <style>
         .logo-text {
@@ -93,7 +107,7 @@ if check_password():
         st.session_state.authenticated = False
         st.rerun()
 
-    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
+    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
     menu = st.sidebar.radio("Navegación", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
     if st.sidebar.button("🔄 Sincronizar"):
         st.cache_data.clear()
@@ -112,7 +126,7 @@ if check_password():
             c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
             c2.metric("EN PIPELINE", f"USD {pipeline_negoc:,.0f}")
             c3.metric("FALTANTE META", f"USD {faltante:,.0f}")
-            c4.metric("CONTACTOS", len(df))
+            c4.metric("TOTAL CONTACTOS", len(df))
             st.markdown("---")
             col_gauge, col_stats = st.columns([1, 1.2])
             with col_gauge:
@@ -136,8 +150,6 @@ if check_password():
                     fig_resp = px.bar(resp_data, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3498db'])
                     fig_resp.update_layout(height=300, margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_resp, use_container_width=True)
-                else:
-                    st.info("Aún no hay recaudación confirmada.")
             st.markdown("---")
             st.subheader("🏆 Tabla de Honor")
             df_conf = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
@@ -168,7 +180,7 @@ if check_password():
                     else:
                         with st.form(key=f"f_edit_{row['id']}"):
                             f1, f2, f3 = st.columns(3)
-                            un_nom = f1.text_input("Nombre", row['nombre']); un_ape = f2.text_input("Apellido", row['apellido'])
+                            u_nom = f1.text_input("Nombre", row['nombre']); u_ape = f2.text_input("Apellido", row['apellido'])
                             idx_resp = LISTA_RESPONSABLES.index(row['responsable']) if row['responsable'] in LISTA_RESPONSABLES else 0
                             u_resp = f3.selectbox("Responsable", LISTA_RESPONSABLES, index=idx_resp)
                             un_est = f1.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0)
