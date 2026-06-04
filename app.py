@@ -15,7 +15,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
 ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
 
-# --- MOTOR DE DATOS (PROTECCIÓN DE TIPOS PANDAS 3.0) ---
+# --- MOTOR DE DATOS (LIMPIEZA DE DECIMALES) ---
 def load_data():
     try:
         data = conn.read(ttl=0)
@@ -26,10 +26,13 @@ def load_data():
         for col in ['monto_confirmado', 'monto_sugerido']:
             data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
         
-        # 2. Forzar TODO lo demás a String para evitar el TypeError
+        # 2. Forzar TODO lo demás a String y LIMPIAR el ".0"
         for col in data.columns:
             if col not in ['monto_confirmado', 'monto_sugerido']:
+                # Convertimos a string
                 data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
+                # ELIMINAR EL ".0" de números que se convirtieron a texto (como teléfonos o IDs)
+                data[col] = data[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
         
         return data
     except Exception:
@@ -37,9 +40,8 @@ def load_data():
 
 def save_data(dataframe):
     try:
-        # Integridad: Si no es confirmado, el monto es 0
+        # Integridad Financiera
         dataframe.loc[dataframe['estado'] != "6. Donación Confirmada", 'monto_confirmado'] = 0
-        # Guardamos todo como string en GSheets para evitar conflictos de celda
         df_save = dataframe.astype(str)
         conn.update(data=df_save)
         st.cache_data.clear()
@@ -102,7 +104,7 @@ if menu == "📊 Dashboard Ejecutivo":
 # --- PIPELINE ---
 elif menu == "👥 Pipeline Operativo":
     st.title("Gestión de Prospectos")
-    search = st.text_input("🔍 Buscar...").lower()
+    search = st.text_input("🔍 Buscar por cualquier campo...").lower()
     df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
 
     for idx, row in df_f.iterrows():
@@ -114,7 +116,8 @@ elif menu == "👥 Pipeline Operativo":
             if not is_edit:
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
+                    st.write(f"📞 **Tel:** {row['telefono']}") # AQUÍ SALDRÁ LIMPIO
+                    st.write(f"💼 **Rubro:** {row['rubro']}")
                     st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
                 with c2:
                     st.write(f"📓 **Contexto:** {row['contexto']}")
@@ -124,21 +127,22 @@ elif menu == "👥 Pipeline Operativo":
                     f1, f2, f3 = st.columns(3)
                     u_nom = f1.text_input("Nombre", row['nombre'])
                     u_ape = f2.text_input("Apellido", row['apellido'])
-                    u_resp = f3.selectbox("Responsable", LISTA_RESPONSABLES, index=LISTA_RESPONSABLES.index(row['responsable']) if row['responsable'] in LISTA_RESPONSABLES else 0)
-                    u_est = f1.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0)
-                    u_sug = f2.number_input("Sugerido", value=float(row['monto_sugerido']))
-                    u_conf = f3.number_input("Confirmado", value=float(row['monto_confirmado']))
-                    u_tel = f1.text_input("Teléfono", row['telefono'])
-                    u_res = f2.text_input("Residencia", row['residencia'])
-                    u_fam = f3.text_input("Familia", row['grupo_familiar'])
-                    u_rub = f1.text_input("Rubro", row['rubro'])
+                    u_tel = f3.text_input("Teléfono", row['telefono'])
+                    
+                    idx_resp = LISTA_RESPONSABLES.index(row['responsable']) if row['responsable'] in LISTA_RESPONSABLES else 0
+                    u_resp = f1.selectbox("Responsable", LISTA_RESPONSABLES, index=idx_resp)
+                    u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0)
+                    u_rub = f3.text_input("Rubro", row['rubro'])
+                    
+                    u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido']))
+                    u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado']))
+                    u_res = f1.text_input("Residencia", row['residencia'])
+                    u_fam = f2.text_input("Familia", row['grupo_familiar'])
+                    u_pas = f3.text_input("Próximo Paso", row['proximos_pasos'])
                     u_ctx = st.text_area("Contexto", row['contexto'])
-                    u_pas = st.text_input("Próximo Paso", row['proximos_pasos'])
                     
                     if st.form_submit_button("💾 GUARDAR"):
-                        # ACTUALIZACIÓN SEGURA POR ID
                         target_id = str(row['id'])
-                        # Localizar la fila real en el DataFrame principal por ID
                         df.loc[df['id'] == target_id, ['nombre', 'apellido', 'responsable', 'estado', 'monto_sugerido', 'monto_confirmado', 'telefono', 'residencia', 'grupo_familiar', 'rubro', 'contexto', 'proximos_pasos']] = [
                             u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas
                         ]
@@ -155,7 +159,7 @@ elif menu == "🆕 Nuevo Registro":
         c1, c2 = st.columns(2)
         n = c1.text_input("Nombre *")
         a = c2.text_input("Apellido")
-        r = c1.selectbox("Responsable", LISTA_RESPONSABLES)
+        r = c1.selectbox("Asignar Responsable", LISTA_RESPONSABLES)
         s = c2.number_input("Sugerido (USD)", value=0.0)
         ctx = st.text_area("Notas de contexto")
         if st.form_submit_button("🚀 Crear Donante"):
