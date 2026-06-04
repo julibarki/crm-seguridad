@@ -6,19 +6,24 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="DSVI - Security CRM", layout="wide", page_icon="🛡️")
+st.set_page_config(
+    page_title="DSVI - Security CRM", 
+    layout="wide", 
+    page_icon="🛡️",
+    initial_sidebar_state="auto"
+)
 
-# --- BLOQUEO TOTAL DE BARRAS DE STREAMLIT (GITHUB, MENÚS, ETC) ---
+# --- BLOQUEO SELECTIVO (OCULTA GITHUB PERO DEJA EL MENÚ MOBILE) ---
 st.markdown("""
     <style>
-    /* Oculta el header de Streamlit */
-    header {visibility: hidden !important;}
-    /* Oculta el botón de Deploy y el menú de GitHub */
+    /* Oculta los iconos de GitHub, Share y Menú de desarrollo en la derecha */
+    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+    /* Oculta el botón de Deploy */
     .stAppDeployButton {display:none !important;}
-    #MainMenu {visibility: hidden !important;}
+    /* Oculta el footer */
     footer {visibility: hidden !important;}
-    /* Quita el espacio extra arriba */
-    .block-container {padding-top: 0rem !important;}
+    /* Ajusta el espacio arriba para que el botón mobile se vea bien */
+    header {height: 40px !important; background-color: rgba(0,0,0,0) !important;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -30,7 +35,7 @@ def check_password():
     if st.session_state.authenticated:
         return True
 
-    # Diseño del logo DSVI minimalista en blanco
+    # Logo DSVI en blanco puro
     st.markdown("""
         <style>
         .logo-text {
