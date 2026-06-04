@@ -15,30 +15,32 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
 ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
 
-# --- MOTOR DE DATOS (VERSION FINAL ROBUSTA) ---
+# --- MOTOR DE DATOS (PROTECCIÓN TOTAL CONTRA ERRORES DE TIPO) ---
 def load_data():
     try:
-        # Forzar lectura sin caché para ver cambios del Excel inmediatos
+        # Forzar lectura sin caché
         data = conn.read(ttl=0)
         
         if data is None or data.empty:
             return pd.DataFrame()
 
-        # 1. Limpieza de nombres de columnas (quitar espacios invisibles)
+        # 1. Limpieza de nombres de columnas
         data.columns = [str(c).strip() for c in data.columns]
         
-        # 2. Sanitización de Números
+        # 2. Sanitización de Números (Montos)
         for col in ['monto_confirmado', 'monto_sugerido']:
             if col in data.columns:
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
             else:
                 data[col] = 0.0
         
-        # 3. Sanitización de Texto (Quitar el .0 de teléfonos/IDs y rellenar vacíos)
+        # 3. Sanitización de Texto (FIX: Evita el error 'float object has no attribute endswith')
         for col in data.columns:
             if col not in ['monto_confirmado', 'monto_sugerido']:
+                # Convertimos todo a string primero, manejando nulos
                 data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
-                data[col] = data[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
+                # Limpiamos el ".0" usando regex (más seguro que endswith)
+                data[col] = data[col].str.replace(r'\.0$', '', regex=True)
         
         return data
     except Exception as e:
@@ -47,10 +49,11 @@ def load_data():
 
 def save_data(dataframe):
     try:
-        # Regla de Integridad: Solo estado 6 tiene monto real
+        # Integridad: Solo estado 6 tiene monto real
         if 'estado' in dataframe.columns and 'monto_confirmado' in dataframe.columns:
             dataframe.loc[dataframe['estado'] != "6. Donación Confirmada", 'monto_confirmado'] = 0
         
+        # Guardamos todo como string para evitar errores de celda en Google Sheets
         df_save = dataframe.astype(str)
         conn.update(data=df_save)
         st.cache_data.clear()
@@ -67,7 +70,7 @@ st.sidebar.title("🛡️ Recaudación Pro")
 meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
 menu = st.sidebar.radio("Navegación", ["📊 Dashboard Ejecutivo", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
 
-if st.sidebar.button("🔄 Sincronizar Ahora"):
+if st.sidebar.button("🔄 Sincronizar"):
     st.cache_data.clear()
     st.rerun()
 
@@ -75,17 +78,17 @@ if st.sidebar.button("🔄 Sincronizar Ahora"):
 if menu == "📊 Dashboard Ejecutivo":
     st.title("Panel de Control Estratégico")
     
-    if df.empty:
-        st.warning("No hay datos cargados en el sistema. Crea tu primer registro en 'Nuevo Registro'.")
+    if df.empty or "nombre" not in df.columns:
+        st.warning("Crea tu primer registro en 'Nuevo Registro' para activar el Dashboard.")
     else:
-        # Cálculos de Negocio
+        # Cálculos
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum())
         pipeline_val = float(df[df['estado'].isin(ESTADOS[1:5])]['monto_sugerido'].sum())
         faltante = max(0, meta_usd - recaudado)
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
-        c2.metric("PIPELINE CALIENTE", f"USD {pipeline_val:,.0f}")
+        c2.metric("POTENCIAL PIPELINE", f"USD {pipeline_val:,.0f}")
         c3.metric("FALTANTE META", f"USD {faltante:,.0f}")
         c4.metric("TOTAL CONTACTOS", len(df))
 
@@ -94,7 +97,7 @@ if menu == "📊 Dashboard Ejecutivo":
         col_left, col_right = st.columns([1, 1.2])
         
         with col_left:
-            # Gráfico de Aguja con corrección de color y márgenes
+            # Gauge Pro
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number", value = recaudado,
                 gauge = {
@@ -103,9 +106,9 @@ if menu == "📊 Dashboard Ejecutivo":
                     'bgcolor': "rgba(0,0,0,0)",
                     'steps': [{'range': [0, meta_usd], 'color': "rgba(200, 200, 200, 0.2)"}],
                 },
-                title = {'text': "Avance vs Meta"}
+                title = {'text': "Avance vs Meta", 'font': {'size': 20}}
             ))
-            fig_gauge.update_layout(height=350, margin=dict(l=50, r=50, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "#f8f9fa"})
+            fig_gauge.update_layout(height=350, margin=dict(l=60, r=60, t=60, b=40), paper_bgcolor='rgba(0,0,0,0)', font={'color': "#f8f9fa"})
             st.plotly_chart(fig_gauge, use_container_width=True)
             
             st.subheader("🏆 Donaciones Confirmadas")
@@ -133,7 +136,7 @@ elif menu == "👥 Pipeline Operativo":
     if df.empty:
         st.info("La base de datos está vacía.")
     else:
-        st.write(f"📂 Base de datos con **{len(df)}** registros.")
+        st.write(f"📂 **{len(df)}** registros en la nube.")
         search = st.text_input("🔍 Buscar...").lower()
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
 
@@ -147,7 +150,8 @@ elif menu == "👥 Pipeline Operativo":
                 if not is_edit:
                     c1, c2 = st.columns(2)
                     with c1:
-                        st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
+                        st.write(f"📞 **Tel:** {row['telefono']}")
+                        st.write(f"💼 **Rubro:** {row['rubro']}")
                         st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
                     with c2:
                         st.write(f"📓 **Contexto:** {row['contexto']}")
@@ -170,14 +174,13 @@ elif menu == "👥 Pipeline Operativo":
                         
                         if st.form_submit_button("💾 GUARDAR"):
                             target_id = str(row['id'])
-                            # Actualización segura buscando por ID
                             mask = df['id'] == target_id
                             df.loc[mask, ['nombre', 'apellido', 'responsable', 'estado', 'monto_sugerido', 'monto_confirmado', 'telefono', 'residencia', 'grupo_familiar', 'rubro', 'contexto', 'proximos_pasos']] = [
                                 u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas
                             ]
                             if save_data(df): st.rerun()
                     
-                    if st.button("🗑️ ELIMINAR", key=f"del_{row.get('id', idx)}"):
+                    if st.button("🗑️ ELIMINAR DONANTE", key=f"del_{row.get('id', idx)}"):
                         df = df[df['id'] != str(row['id'])]
                         if save_data(df): st.rerun()
 
