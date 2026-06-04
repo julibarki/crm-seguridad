@@ -14,37 +14,35 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# --- CSS QUIRÚRGICO: MANTIENE EL MENÚ, BORRA GITHUB Y SHARE ---
+# --- CSS DE PRECISIÓN QUIRÚRGICA: MANTIENE EL MENÚ, BORRA TODO LO DEMÁS ---
 st.markdown("""
     <style>
-    /* 1. Ocultar botones de la derecha (GitHub, Share, Deploy) */
-    [data-testid="stToolbar"], .stAppDeployButton {
+    /* 1. Ocultar SOLAMENTE los botones de la derecha (GitHub, Share, Deploy, Menú) */
+    [data-testid="stToolbar"], 
+    .stAppDeployButton, 
+    header [data-testid="stHeader"] div:nth-child(2) {
         display: none !important;
     }
     
-    /* 2. Forzar que el HEADER sea visible y NO bloquee el menú */
+    /* 2. Asegurar que el HEADER sea transparente pero CLICKABLE para el menú */
     header[data-testid="stHeader"] {
-        visibility: visible !important;
         background-color: rgba(0,0,0,0) !important;
-        z-index: 9999999 !important;
+        visibility: visible !important;
     }
 
-    /* 3. FORZAR BOTÓN DE MENÚ (HAMBURGUESA) VISIBLE Y BLANCO */
-    [data-testid="stSidebarCollapsedControl"] {
-        display: flex !important;
-        visibility: visible !important;
-        z-index: 10000000 !important;
+    /* 3. Forzar el color BLANCO del botón de menú (hamburguesa) para que se vea */
+    button[data-testid="stBaseButton-headerNoPadding"] {
         color: white !important;
+        visibility: visible !important;
     }
     
-    /* Asegurar que el icono dentro sea blanco puro */
-    [data-testid="stSidebarCollapsedControl"] svg {
-        fill: white !important;
-    }
-
-    /* 4. Quitar footer y ajustar márgenes */
+    /* 4. Quitar el pie de página de Streamlit */
     footer {visibility: hidden !important;}
-    .block-container { padding-top: 3.5rem !important; }
+
+    /* 5. Espacio superior para que el contenido no tape el botón arriba */
+    .block-container {
+        padding-top: 3rem !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -64,7 +62,7 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            password_input = st.text_input("Clave de acceso:", type="password")
+            password_input = st.text_input("Ingresa la clave de acceso:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
                     st.session_state.authenticated = True
@@ -154,7 +152,7 @@ if check_password():
     # --- PIPELINE ---
     elif menu == "👥 Pipeline":
         st.title("Gestión de Prospectos")
-        search = st.text_input("🔍 Buscar por cualquier campo...").lower()
+        search = st.text_input("🔍 Buscar...").lower()
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
         
         for idx, row in df_f.iterrows():
@@ -189,7 +187,7 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos']); u_ctx = st.text_area("Contexto", row['contexto'])
-                        if st.form_submit_button("💾 GUARDAR"):
+                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
                             target_id = str(row['id'])
                             df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas]
                             if save_data(df): st.rerun()
