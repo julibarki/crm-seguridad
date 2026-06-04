@@ -60,7 +60,7 @@ df = load_data()
 
 # --- SIDEBAR ---
 st.sidebar.title("🛡️ CRM Recaudación")
-meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
+meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
 menu = st.sidebar.radio("Navegación", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
 if st.sidebar.button("🔄 Sincronizar Ahora"):
     st.cache_data.clear()
