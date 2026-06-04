@@ -10,20 +10,29 @@ st.set_page_config(
     page_title="DSVI - Security CRM", 
     layout="wide", 
     page_icon="🛡️",
-    initial_sidebar_state="auto"
+    initial_sidebar_state="expanded" # Fuerza a que se vea el menú al iniciar
 )
 
-# --- BLOQUEO SELECTIVO (OCULTA GITHUB PERO DEJA EL MENÚ MOBILE) ---
+# --- CSS DE PROTECCIÓN Y VISIBILIDAD (ELIMINA GITHUB, MANTIENE MENÚ) ---
 st.markdown("""
     <style>
-    /* Oculta los iconos de GitHub, Share y Menú de desarrollo en la derecha */
-    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-    /* Oculta el botón de Deploy */
-    .stAppDeployButton {display:none !important;}
+    /* Oculta los botones de la DERECHA (GitHub, Share, Deploy, etc) */
+    [data-testid="stToolbar"], .stAppDeployButton {
+        display: none !important;
+    }
+    
+    /* MANTIENE el Header pero quita el fondo para que no moleste */
+    header[data-testid="stHeader"] {
+        background-color: rgba(0,0,0,0) !important;
+    }
+
+    /* FUERZA que el botón del Menú (hamburguesa) sea BLANCO */
+    button[data-testid="stBaseButton-headerNoPadding"] {
+        color: white !important;
+    }
+    
     /* Oculta el footer */
     footer {visibility: hidden !important;}
-    /* Ajusta el espacio arriba para que el botón mobile se vea bien */
-    header {height: 40px !important; background-color: rgba(0,0,0,0) !important;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -35,18 +44,18 @@ def check_password():
     if st.session_state.authenticated:
         return True
 
-    # Logo DSVI en blanco puro
+    # Logo DSVI en blanco puro y grande
     st.markdown("""
         <style>
         .logo-text {
             font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
             font-weight: 900;
-            font-size: 100px;
+            font-size: clamp(60px, 10vw, 120px);
             letter-spacing: -5px;
             color: #FFFFFF;
             text-align: center;
             margin-bottom: 20px;
-            margin-top: 80px;
+            margin-top: 50px;
         }
         </style>
         <div class="logo-text">DSVI</div>
@@ -112,7 +121,7 @@ if check_password():
         st.session_state.authenticated = False
         st.rerun()
 
-    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
+    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
     menu = st.sidebar.radio("Navegación", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
     if st.sidebar.button("🔄 Sincronizar"):
         st.cache_data.clear()
