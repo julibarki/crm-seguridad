@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# --- CSS DE PRECISIÓN: OCULTA GITHUB Y FUERZA EL MENÚ EN CELULARES ---
+# --- CSS QUIRÚRGICO: MANTIENE EL MENÚ, BORRA GITHUB Y SHARE ---
 st.markdown("""
     <style>
     /* 1. Ocultar botones de la derecha (GitHub, Share, Deploy) */
@@ -22,26 +22,29 @@ st.markdown("""
         display: none !important;
     }
     
-    /* 2. Asegurar visibilidad del header para el botón de menú */
+    /* 2. Forzar que el HEADER sea visible y NO bloquee el menú */
     header[data-testid="stHeader"] {
         visibility: visible !important;
         background-color: rgba(0,0,0,0) !important;
+        z-index: 9999999 !important;
     }
 
-    /* 3. Forzar que el botón de menú (hamburguesa) sea BLANCO y clickeable */
-    button[data-testid="stBaseButton-headerNoPadding"] {
-        color: white !important;
+    /* 3. FORZAR BOTÓN DE MENÚ (HAMBURGUESA) VISIBLE Y BLANCO */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: flex !important;
         visibility: visible !important;
-        display: block !important;
+        z-index: 10000000 !important;
+        color: white !important;
     }
     
-    /* 4. Quitar el footer "Made with Streamlit" */
-    footer {visibility: hidden !important;}
-
-    /* 5. Espacio superior para evitar solapamientos */
-    .block-container {
-        padding-top: 3.5rem !important;
+    /* Asegurar que el icono dentro sea blanco puro */
+    [data-testid="stSidebarCollapsedControl"] svg {
+        fill: white !important;
     }
+
+    /* 4. Quitar footer y ajustar márgenes */
+    footer {visibility: hidden !important;}
+    .block-container { padding-top: 3.5rem !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -61,7 +64,7 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            password_input = st.text_input("Ingresa la clave de acceso:", type="password")
+            password_input = st.text_input("Clave de acceso:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
                     st.session_state.authenticated = True
@@ -127,7 +130,7 @@ if check_password():
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {faltante:,.0f}")
-        c3.metric("CONTACTOS", len(df))
+        c3.metric("TOTAL CONTACTOS", len(df))
         
         st.markdown("---")
         col_gauge, col_resp = st.columns([1, 1.2])
