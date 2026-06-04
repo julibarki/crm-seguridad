@@ -14,155 +14,154 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- CONFIGURACIÓN DE NEGOCIO ---
 LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
 ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
+COLUMNAS_BASE = ["id", "nombre", "apellido", "telefono", "rubro", "contexto", "residencia", "grupo_familiar", "monto_sugerido", "estado", "monto_confirmado", "proximos_pasos", "responsable", "fecha_registro"]
 
-# --- MOTOR DE DATOS (LIMPIEZA DE DECIMALES) ---
+# --- MOTOR DE DATOS ---
 def load_data():
     try:
         data = conn.read(ttl=0)
         if data is None or data.empty:
-            return pd.DataFrame(columns=["id", "nombre", "apellido", "telefono", "rubro", "contexto", "residencia", "grupo_familiar", "monto_sugerido", "estado", "monto_confirmado", "proximos_pasos", "responsable", "fecha_registro"])
+            return pd.DataFrame(columns=COLUMNAS_BASE)
         
-        # 1. Forzar montos a numérico (float)
+        # 1. Asegurar que existan todas las columnas
+        for col in COLUMNAS_BASE:
+            if col not in data.columns:
+                data[col] = "-"
+        
+        # 2. Forzar montos a float
         for col in ['monto_confirmado', 'monto_sugerido']:
             data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
         
-        # 2. Forzar TODO lo demás a String y LIMPIAR el ".0"
+        # 3. Limpieza de texto y quitar el ".0" de los teléfonos/IDs
         for col in data.columns:
             if col not in ['monto_confirmado', 'monto_sugerido']:
-                # Convertimos a string
                 data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
-                # ELIMINAR EL ".0" de números que se convirtieron a texto (como teléfonos o IDs)
                 data[col] = data[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
         
-        return data
+        return data[COLUMNAS_BASE] # Reordenar según estructura base
     except Exception:
-        return pd.DataFrame(columns=["id", "nombre", "apellido", "telefono", "rubro", "contexto", "residencia", "grupo_familiar", "monto_sugerido", "estado", "monto_confirmado", "proximos_pasos", "responsable", "fecha_registro"])
+        return pd.DataFrame(columns=COLUMNAS_BASE)
 
 def save_data(dataframe):
     try:
-        # Integridad Financiera
+        # Integridad: Solo el estado 6 tiene dinero real
         dataframe.loc[dataframe['estado'] != "6. Donación Confirmada", 'monto_confirmado'] = 0
         df_save = dataframe.astype(str)
         conn.update(data=df_save)
         st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Error de red: {e}")
+        st.error(f"Error al guardar en la nube: {e}")
         return False
 
 # --- CARGA INICIAL ---
 df = load_data()
 
 # --- SIDEBAR ---
-st.sidebar.title("🛡️ Recaudación Pro")
-meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
-menu = st.sidebar.radio("Navegación", ["📊 Dashboard Ejecutivo", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
-if st.sidebar.button("🔄 Sincronizar"):
+st.sidebar.title("🛡️ CRM Seguridad")
+meta_usd = st.sidebar.number_input("Meta Objetivo (USD)", value=500000.0, step=10000.0)
+menu = st.sidebar.radio("Navegación", ["📊 Dashboard", "👥 Pipeline Operativo", "🆕 Nuevo"])
+
+if st.sidebar.button("🔄 Sincronizar Ahora"):
     st.cache_data.clear()
     st.rerun()
 
-# --- DASHBOARD ---
-if menu == "📊 Dashboard Ejecutivo":
+# --- VISTA: DASHBOARD ---
+if menu == "📊 Dashboard":
     st.title("Panel de Control")
     recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum())
-    pipeline_val = float(df[df['estado'].isin(ESTADOS[1:5])]['monto_sugerido'].sum())
-    
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
-    c2.metric("PIPELINE CALIENTE", f"USD {pipeline_val:,.0f}")
-    c3.metric("FALTANTE META", f"USD {max(0, meta_usd - recaudado):,.0f}")
-    c4.metric("TOTAL CONTACTOS", len(df))
+    c2.metric("CONTACTOS", len(df))
+    c3.metric("META", f"USD {meta_usd:,.0f}")
 
-    st.markdown("---")
-    col_left, col_right = st.columns([1, 1.2])
-    
-    with col_left:
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number", value = recaudado,
-            gauge = {
-                'axis': {'range': [0, meta_usd]},
-                'bar': {'color': "#2ecc71"},
-                'bgcolor': "rgba(0,0,0,0)",
-                'steps': [{'range': [0, meta_usd], 'color': "rgba(200, 200, 200, 0.2)"}],
-            },
-            title = {'text': "Avance vs Meta (USD)"}
-        ))
-        fig_gauge.update_layout(height=380, margin=dict(l=60, r=60, t=80, b=40), paper_bgcolor='rgba(0,0,0,0)', font={'color': "#f8f9fa"})
-        st.plotly_chart(fig_gauge, use_container_width=True)
-        
-        st.subheader("🏆 Donaciones Confirmadas")
-        df_conf = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado']].sort_values(by='monto_confirmado', ascending=False)
-        st.dataframe(df_conf, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")}, use_container_width=True, hide_index=True)
+    fig_gauge = go.Figure(go.Indicator(
+        mode = "gauge+number", value = recaudado,
+        gauge = {'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#2ecc71"}, 'bgcolor': "rgba(0,0,0,0)"},
+        title = {'text': "Avance Real"}
+    ))
+    fig_gauge.update_layout(height=350, margin=dict(l=60, r=60, t=80, b=40), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+    st.plotly_chart(fig_gauge, use_container_width=True)
 
-    with col_right:
-        st.subheader("USD por Responsable")
-        resp_data = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
-        fig_resp = px.bar(resp_data, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3498db'])
-        fig_resp.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_resp, use_container_width=True)
-
-# --- PIPELINE ---
+# --- VISTA: PIPELINE ---
 elif menu == "👥 Pipeline Operativo":
     st.title("Gestión de Prospectos")
+    
+    st.write(f"📂 Base de datos: **{len(df)}** registros.")
+    
     search = st.text_input("🔍 Buscar por cualquier campo...").lower()
-    df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
+    
+    # Filtro de búsqueda ultra-robusto
+    if search:
+        # Convertimos la fila a un solo string largo para buscar sin errores de tipos
+        df_f = df[df.apply(lambda row: search in " ".join(row.astype(str)).lower(), axis=1)]
+    else:
+        df_f = df
 
-    for idx, row in df_f.iterrows():
-        emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
-        with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['estado']} | {row['responsable']}"):
-            st.markdown(f"💰 **Sugerido:** USD {float(row['monto_sugerido']):,.0f} | **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
-            is_edit = st.toggle("✏️ Editar", key=f"ed_{row['id']}")
-            
-            if not is_edit:
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.write(f"📞 **Tel:** {row['telefono']}") # AQUÍ SALDRÁ LIMPIO
-                    st.write(f"💼 **Rubro:** {row['rubro']}")
-                    st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
-                with c2:
-                    st.write(f"📓 **Contexto:** {row['contexto']}")
-                    st.write(f"🚀 **Paso:** {row['proximos_pasos']}")
-            else:
-                with st.form(key=f"f_{row['id']}"):
-                    f1, f2, f3 = st.columns(3)
-                    u_nom = f1.text_input("Nombre", row['nombre'])
-                    u_ape = f2.text_input("Apellido", row['apellido'])
-                    u_tel = f3.text_input("Teléfono", row['telefono'])
-                    
-                    idx_resp = LISTA_RESPONSABLES.index(row['responsable']) if row['responsable'] in LISTA_RESPONSABLES else 0
-                    u_resp = f1.selectbox("Responsable", LISTA_RESPONSABLES, index=idx_resp)
-                    u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0)
-                    u_rub = f3.text_input("Rubro", row['rubro'])
-                    
-                    u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido']))
-                    u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado']))
-                    u_res = f1.text_input("Residencia", row['residencia'])
-                    u_fam = f2.text_input("Familia", row['grupo_familiar'])
-                    u_pas = f3.text_input("Próximo Paso", row['proximos_pasos'])
-                    u_ctx = st.text_area("Contexto", row['contexto'])
-                    
-                    if st.form_submit_button("💾 GUARDAR"):
-                        target_id = str(row['id'])
-                        df.loc[df['id'] == target_id, ['nombre', 'apellido', 'responsable', 'estado', 'monto_sugerido', 'monto_confirmado', 'telefono', 'residencia', 'grupo_familiar', 'rubro', 'contexto', 'proximos_pasos']] = [
-                            u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas
-                        ]
-                        if save_data(df): st.rerun()
+    if df_f.empty and len(df) > 0:
+        st.warning("No hay resultados para esta búsqueda.")
+    elif df.empty:
+        st.info("La base de datos está vacía. Crea un donante en 'Nuevo'.")
+    else:
+        for idx, row in df_f.iterrows():
+            emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
+            with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['estado']} | {row['responsable']}"):
                 
-                if st.button("🗑️ ELIMINAR", key=f"del_{row['id']}"):
-                    df = df[df['id'] != str(row['id'])]
-                    if save_data(df): st.rerun()
+                st.markdown(f"💰 **Sugerido:** USD {float(row['monto_sugerido']):,.0f} | **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
+                
+                is_edit = st.toggle("✏️ Editar Ficha", key=f"ed_{row['id']}_{idx}")
+                
+                if not is_edit:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
+                        st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
+                    with c2:
+                        st.write(f"📓 **Contexto:** {row['contexto']}")
+                        st.write(f"🚀 **Paso:** {row['proximos_pasos']}")
+                else:
+                    with st.form(key=f"f_edit_{row['id']}_{idx}"):
+                        f1, f2, f3 = st.columns(3)
+                        u_nom = f1.text_input("Nombre", row['nombre'])
+                        u_ape = f2.text_input("Apellido", row['apellido'])
+                        u_tel = f3.text_input("Teléfono", row['telefono'])
+                        
+                        idx_resp = LISTA_RESPONSABLES.index(row['responsable']) if row['responsable'] in LISTA_RESPONSABLES else 0
+                        u_resp = f1.selectbox("Responsable", LISTA_RESPONSABLES, index=idx_resp)
+                        u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0)
+                        u_rub = f3.text_input("Rubro", row['rubro'])
+                        
+                        u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido']))
+                        u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado']))
+                        u_res = f1.text_input("Residencia", row['residencia'])
+                        u_fam = f2.text_input("Familia", row['grupo_familiar'])
+                        u_pas = f3.text_input("Próximo Paso", row['proximos_pasos'])
+                        u_ctx = st.text_area("Contexto", row['contexto'])
+                        
+                        if st.form_submit_button("💾 GUARDAR"):
+                            # Actualización por posición ID-Match
+                            target_id = str(row['id'])
+                            mask = df['id'] == target_id
+                            df.loc[mask, ['nombre', 'apellido', 'responsable', 'estado', 'monto_sugerido', 'monto_confirmado', 'telefono', 'residencia', 'grupo_familiar', 'rubro', 'contexto', 'proximos_pasos']] = [
+                                u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas
+                            ]
+                            if save_data(df): st.rerun()
+                    
+                    if st.button("🗑️ ELIMINAR DONANTE", key=f"del_{row['id']}_{idx}"):
+                        df = df[df['id'] != str(row['id'])]
+                        if save_data(df): st.rerun()
 
-# --- NUEVO ---
-elif menu == "🆕 Nuevo Registro":
-    st.subheader("Cargar Nuevo Prospecto")
+# --- VISTA: NUEVO ---
+elif menu == "🆕 Nuevo":
+    st.subheader("Registrar Nuevo Donante")
     with st.form("n_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         n = c1.text_input("Nombre *")
         a = c2.text_input("Apellido")
         r = c1.selectbox("Asignar Responsable", LISTA_RESPONSABLES)
-        s = c2.number_input("Sugerido (USD)", value=0.0)
+        s = c2.number_input("Monto Sugerido (USD)", value=0.0)
         ctx = st.text_area("Notas de contexto")
-        if st.form_submit_button("🚀 Crear Donante"):
+        if st.form_submit_button("🚀 Crear y Guardar"):
             if n:
                 new_id = str(int(datetime.now().timestamp()))
                 new_row = pd.DataFrame([{
@@ -171,4 +170,4 @@ elif menu == "🆕 Nuevo Registro":
                     "telefono": "-", "rubro": "-", "contexto": ctx, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-"
                 }])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
-                if save_data(updated_df): st.success(f"¡{n} registrado!"); st.rerun()
+                if save_data(updated_df): st.success(f"¡{n} registrado exitosamente!"); st.rerun()
