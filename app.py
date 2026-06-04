@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Security CRM Elite v3.1", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="Security CRM Enterprise", layout="wide", page_icon="🛡️")
 
 # --- CONEXIÓN ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -38,16 +38,12 @@ def save_data(dataframe):
         st.error(f"Error de red: {e}")
         return False
 
-# --- CARGA ---
 df = load_data()
 
 # --- SIDEBAR ---
 st.sidebar.title("🛡️ Recaudación Pro")
 meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
 menu = st.sidebar.radio("Navegación", ["📊 Dashboard Ejecutivo", "👥 Pipeline Operativo", "🆕 Nuevo Registro"])
-if st.sidebar.button("🔄 Sincronizar"):
-    st.cache_data.clear()
-    st.rerun()
 
 # --- VISTA: DASHBOARD ---
 if menu == "📊 Dashboard Ejecutivo":
@@ -61,33 +57,35 @@ if menu == "📊 Dashboard Ejecutivo":
     c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
     c2.metric("PIPELINE CALIENTE", f"USD {pipeline_val:,.0f}")
     c3.metric("FALTANTE META", f"USD {faltante:,.0f}")
-    c4.metric("TOTAL CONTACTOS", len(df))
+    c4.metric("CONTACTOS", len(df))
 
     st.markdown("---")
     col_left, col_right = st.columns([1, 1.2])
     
     with col_left:
-        # --- FIX VISUAL DEL GAUGE ---
+        # --- FIX VISUAL DEFINITIVO DEL GAUGE ---
         fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number", value = recaudado,
+            mode = "gauge+number", 
+            value = recaudado,
             gauge = {
-                'axis': {'range': [None, meta_usd], 'tickwidth': 1, 'tickcolor': "gray"},
-                'bar': {'color': "#2ecc71"},
-                'bgcolor': "white",
+                'axis': {'range': [0, meta_usd], 'tickwidth': 1, 'tickcolor': "gray"},
+                'bar': {'color': "#2ecc71"}, # Verde fuerte para el progreso
+                'bgcolor': "rgba(0,0,0,0)", # Fondo transparente
                 'borderwidth': 2,
                 'bordercolor': "gray",
-                'steps': [{'range': [0, meta_usd], 'color': '#f8f9fa'}],
+                'steps': [
+                    {'range': [0, meta_usd], 'color': "rgba(200, 200, 200, 0.2)"} # El "camino" que falta en gris traslúcido
+                ],
             },
-            title = {'text': "Avance General (USD)", 'font': {'size': 18}}
+            title = {'text': "Avance Real vs Meta (USD)", 'font': {'size': 20}}
         ))
         
-        # Ajuste de márgenes para que NO se corten los números
         fig_gauge.update_layout(
-            height=350,
-            margin=dict(l=50, r=50, t=80, b=40), # Aire suficiente a los costados y abajo
+            height=380,
+            margin=dict(l=60, r=60, t=80, b=40), # Mucho aire para que no se corte nada
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            font={'color': "white" if st.get_option("theme.base") == "dark" else "black"}
+            font={'color': "#f8f9fa"} # Color de fuente claro
         )
         st.plotly_chart(fig_gauge, use_container_width=True)
         
@@ -100,21 +98,21 @@ if menu == "📊 Dashboard Ejecutivo":
         rubro_data = df[df['estado'] == "6. Donación Confirmada"].groupby('rubro')['monto_confirmado'].sum().reset_index()
         if not rubro_data.empty:
             fig_rubro = px.pie(rubro_data, values='monto_confirmado', names='rubro', hole=0.4)
-            fig_rubro.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=300)
+            fig_rubro.update_layout(margin=dict(t=30, b=20, l=20, r=20), height=300, paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_rubro, use_container_width=True)
         else:
             st.info("No hay recaudación confirmada aún.")
         
-        st.subheader("USD por Responsable")
+        st.subheader("Recaudado por Responsable")
         resp_data = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
         fig_resp = px.bar(resp_data, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3498db'])
-        fig_resp.update_layout(height=300, margin=dict(t=20, b=20, l=20, r=20))
+        fig_resp.update_layout(height=300, margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_resp, use_container_width=True)
 
 # --- VISTA: PIPELINE ---
 elif menu == "👥 Pipeline Operativo":
     st.title("Gestión de Prospectos")
-    search = st.text_input("🔍 Buscar...").lower()
+    search = st.text_input("🔍 Buscar (Nombre, Rubro, Notas, Familia...)").lower()
     df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
 
     for idx, row in df_f.iterrows():
@@ -130,7 +128,7 @@ elif menu == "👥 Pipeline Operativo":
                     st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
                 with c2:
                     st.write(f"📓 **Contexto:** {row['contexto']}")
-                    st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
+                    st.write(f"🚀 **Paso:** {row['proximos_pasos']}")
             else:
                 with st.form(key=f"f_{row['id']}"):
                     f1, f2, f3 = st.columns(3)
