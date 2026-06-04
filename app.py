@@ -14,17 +14,20 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILO DSVI Y AJUSTES VISUALES MÍNIMOS (SIN TOCAR CABECERA) ---
+# --- ESTILO DSVI Y AJUSTES VISUALES ---
 st.markdown("""
     <style>
-    /* Quitamos solo el footer para limpieza */
+    /* Ocultar footer */
     footer {visibility: hidden !important;}
     
-    /* Estilo para métricas del dashboard */
+    /* Estilo para métricas */
     [data-testid="stMetricValue"] { font-size: 28px !important; font-weight: 800 !important; }
     
-    /* Ajuste de margen para que no se pegue al borde */
+    /* Ajuste de margen general */
     .block-container { padding-top: 2rem !important; }
+
+    /* Efecto para el icono de WhatsApp */
+    .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -35,7 +38,6 @@ def check_password():
     if st.session_state.authenticated:
         return True
     
-    # Logo DSVI Blanco
     st.markdown("""
         <style> .logo-text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 900; 
         font-size: 100px; letter-spacing: -5px; color: #FFFFFF; text-align: center; margin-top: 80px; } </style>
@@ -55,11 +57,10 @@ def check_password():
                     st.error("❌ Clave incorrecta")
     return False
 
-# --- LÓGICA PRINCIPAL DEL SISTEMA ---
+# --- SISTEMA ---
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # CONFIGURACIÓN DE NEGOCIO
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
     ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
     VALORES_METRICAS = ["Baja", "Media", "Alta", "Muy Alta"]
@@ -69,16 +70,10 @@ if check_password():
             data = conn.read(ttl=0)
             if data is None or data.empty: return pd.DataFrame()
             data.columns = [str(c).strip() for c in data.columns]
-            
-            # Asegurar columnas estratégicas de Sergio
             for m in ["ascendencia", "capacidad", "red_contactos"]:
                 if m not in data.columns: data[m] = "Media"
-            
-            # Sanitizar números
             for col in ['monto_confirmado', 'monto_sugerido']:
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
-            
-            # Sanitizar texto y quitar ".0"
             for col in data.columns:
                 if col not in ['monto_confirmado', 'monto_sugerido']:
                     data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
@@ -88,7 +83,6 @@ if check_password():
 
     def save_data(dataframe):
         try:
-            # Integridad: Solo confirmado (estado 6) tiene dinero real
             if 'estado' in dataframe.columns and 'monto_confirmado' in dataframe.columns:
                 dataframe.loc[dataframe['estado'] != "6. Donación Confirmada", 'monto_confirmado'] = 0
             conn.update(data=dataframe.astype(str))
@@ -98,21 +92,19 @@ if check_password():
 
     def make_whatsapp_link(phone, name):
         clean_phone = ''.join(filter(str.isdigit, str(phone)))
-        if not clean_phone: return None
-        msg = urllib.parse.quote(f"Hola {name}, ¿cómo estás? Te contacto de DSVI...")
+        if not clean_phone or clean_phone == "-": return None
+        msg = urllib.parse.quote(f"Hola {name}, ¿cómo estás? Te contacto de DSVI por el Proyecto de Seguridad...")
         return f"https://wa.me/{clean_phone}?text={msg}"
 
     df = load_data()
 
-    # --- NAVEGACIÓN ---
+    # --- SIDEBAR ---
     st.sidebar.title("🛡️ CRM DSVI")
     if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
-    
-    st.sidebar.markdown("---")
-    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
-    menu = st.sidebar.radio("Ir a:", ["📊 Dashboard", "👥 Pipeline Operativo", "🔎 Análisis Consultoría", "🆕 Registro Nuevo"])
+    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
+    menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline Operativo", "🔎 Análisis Consultoría", "🆕 Registro Nuevo"])
     if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 
     # --- VISTA: DASHBOARD ---
@@ -120,37 +112,31 @@ if check_password():
         st.title("Panel de Control Estratégico")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
         faltante = max(0, meta_usd - recaudado)
-        
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {faltante:,.0f}")
         c3.metric("TOTAL CONTACTOS", len(df))
-        
         st.markdown("---")
-        col_gauge, col_resp = st.columns([1, 1.2])
-        with col_gauge:
+        col_g, col_r = st.columns([1, 1.2])
+        with col_g:
             fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
                 gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
                 title={'text': "Avance vs Meta"}))
             fig_g.update_layout(height=350, margin=dict(l=40, r=40, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_g, use_container_width=True)
-        
-        with col_resp:
+        with col_r:
             st.subheader("USD por Responsable")
             resp_m = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
             if not resp_m.empty:
                 st.plotly_chart(px.bar(resp_m, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3B82F6']), use_container_width=True)
-            else:
-                st.info("Sin recaudación confirmada aún.")
-
-        st.subheader("🏆 Donaciones Confirmadas")
+        st.subheader("🏆 Tabla de Honor")
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
-        st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("Monto USD", format="$ %.0f")})
+        st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")})
 
     # --- VISTA: PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
-        search = st.text_input("🔍 Buscar...").lower()
+        search = st.text_input("🔍 Buscar por cualquier campo...").lower()
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
         
         for idx, row in df_f.iterrows():
@@ -159,11 +145,17 @@ if check_password():
                 
                 c_h1, c_h2 = st.columns([2, 1])
                 with c_h1:
-                    st.markdown(f"💰 **Sugerido:** USD {float(row['monto_sugerido']):,.0f} | **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
+                    st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
                     st.markdown(f"⭐ **Asc:** {row['ascendencia']} | 💰 **Cap:** {row['capacidad']} | 🌐 **Red:** {row['red_contactos']}")
                 with c_h2:
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
-                    if wa_url: st.markdown(f"[WhatsApp]({wa_url})")
+                    if wa_url:
+                        # ICONO DE WHATSAPP PROFESIONAL
+                        st.markdown(f"""
+                            <a href="{wa_url}" target="_blank">
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="35" height="35" class="wa-icon">
+                            </a>
+                        """, unsafe_allow_html=True)
 
                 if st.toggle("Editar Ficha", key=f"ed_{row['id']}"):
                     with st.form(key=f"f_edit_{row['id']}"):
@@ -173,14 +165,12 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos']); u_ctx = st.text_area("Contexto", row['contexto'])
-                        # Métricas Sergio
                         st.markdown("---")
                         fs1, fs2, fs3 = st.columns(3)
                         u_asc = fs1.selectbox("Ascendencia", VALORES_METRICAS, index=VALORES_METRICAS.index(row['ascendencia']) if row['ascendencia'] in VALORES_METRICAS else 1)
                         u_cap = fs2.selectbox("Capacidad Econ.", VALORES_METRICAS, index=VALORES_METRICAS.index(row['capacidad']) if row['capacidad'] in VALORES_METRICAS else 1)
                         u_red = fs3.selectbox("Red de Contactos", VALORES_METRICAS, index=VALORES_METRICAS.index(row['red_contactos']) if row['red_contactos'] in VALORES_METRICAS else 1)
-                        
-                        if st.form_submit_button("💾 GUARDAR"):
+                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
                             target_id = str(row['id'])
                             df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','contexto','proximos_pasos','ascendencia','capacidad','red_contactos']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_ctx, u_pas, u_asc, u_cap, u_red]
                             if save_data(df): st.rerun()
@@ -193,7 +183,7 @@ if check_password():
 
     # --- VISTA: ANALISIS ---
     elif menu == "🔎 Análisis Consultoría":
-        st.title("Métricas Sergio (Priorización Estratégica)")
+        st.title("Métricas de Priorización")
         st.dataframe(df[['nombre', 'apellido', 'ascendencia', 'capacidad', 'red_contactos', 'monto_sugerido', 'responsable']], use_container_width=True, hide_index=True)
 
     # --- VISTA: NUEVO ---
