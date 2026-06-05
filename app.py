@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI CRM - Elite v9.0", 
+    page_title="DSVI CRM - Elite v9.1", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -22,7 +22,6 @@ st.markdown("""
     .block-container { padding-top: 2rem !important; }
     .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
     .log-entry { background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid #1E3A8A; font-size: 14px; }
-    /* Ajuste para que el menú mobile sea visible */
     [data-testid="stSidebarCollapsedControl"] { color: white !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -57,7 +56,7 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            st.markdown("<p style='text-align: center; color: #9CA3AF;'>SISTEMA DE GESTIÓN PRIVADO</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: #9CA3AF;'>ACCESO RESTRINGIDO</p>", unsafe_allow_html=True)
             password_input = st.text_input("Contraseña:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
@@ -71,7 +70,6 @@ if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
     ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
-    VALORES_METRICAS = ["1", "2", "3", "4", "5"]
 
     def load_data():
         try:
@@ -85,7 +83,7 @@ if check_password():
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
             for col in data.columns:
                 if col not in ['monto_confirmado', 'monto_sugerido']:
-                    data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
+                    data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>', 'nan...'], '-')
                     data[col] = data[col].str.replace(r'\.0$', '', regex=True)
             return data
         except: return pd.DataFrame()
@@ -111,66 +109,50 @@ if check_password():
     if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
-    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
+    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
     menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline Operativo", "🔎 Análisis Consultoría", "🆕 Registro Nuevo"])
     if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 
     # --- VISTA: DASHBOARD ---
     if menu == "📊 Dashboard":
-        st.title("Panel Ejecutivo de Recaudación")
+        st.title("Panel Ejecutivo")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
-        
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {max(0, meta_usd - recaudado):,.0f}")
         c3.metric("CONTACTOS", len(df))
-        
         st.markdown("---")
-        
-        # Gráfico Gauge Centralizado
         fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
             gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
-            title={'text': "Progreso vs Meta"}))
+            title={'text': "Progreso"}))
         fig_g.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
         st.plotly_chart(fig_g, use_container_width=True)
-
-        st.subheader("🏆 Tabla de Honor (Donaciones Confirmadas)")
+        st.subheader("🏆 Tabla de Honor")
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
-        if not df_honor.empty:
-            st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("Monto USD", format="$ %.0f")})
-        else: st.info("No hay donaciones confirmadas para mostrar aún.")
+        st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")})
 
     # --- VISTA: PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
-        
-        # MEJORA: Filtros Rápidos
         f_col1, f_col2 = st.columns(2)
         filtro_resp = f_col1.multiselect("Filtrar por Responsable", LISTA_RESPONSABLES, default=LISTA_RESPONSABLES)
         filtro_est = f_col2.multiselect("Filtrar por Estado", ESTADOS, default=ESTADOS)
+        search = st.text_input("🔍 Buscar...").lower()
         
-        search = st.text_input("🔍 Buscar por Nombre, Notas o Familia...").lower()
-        
-        # Aplicar filtros
         df_f = df[df['responsable'].isin(filtro_resp) & df['estado'].isin(filtro_est)]
-        if search:
-            df_f = df_f[df_f.apply(lambda r: search in str(r).lower(), axis=1)]
-
-        st.caption(f"Mostrando {len(df_f)} de {len(df)} contactos.")
+        if search: df_f = df_f[df_f.apply(lambda r: search in str(r).lower(), axis=1)]
 
         for idx, row in df_f.iterrows():
             urg_icon = get_urgencia_label(row['ultima_gestion'])
             emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
             
-            # MEJORA: Obtener última nota para el header
             last_note = ""
-            if str(row['bitacora']) != "-":
+            if str(row['bitacora']) not in ["-", "nan", "None"]:
                 parts = str(row['bitacora']).split(" | ")
-                if parts:
-                    last_note = f" | 💬 {parts[0][:40]}..." # Tomamos los primeros 40 caracteres
+                if parts and len(parts[0]) > 2:
+                    last_note = f" | 💬 {parts[0][:40]}..."
 
             with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['responsable']}{urg_icon}{last_note}"):
-                
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
@@ -186,16 +168,16 @@ if check_password():
                     with col_l:
                         st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
                         st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
-                        st.write(f"⭐ **Comunidad:** {render_stars(row['comunidad'])} | 💰 **Capacidad:** {render_stars(row['capacidad'])}")
                     with col_r:
-                        st.write(f"🚀 **Próximo:** :orange[{row['proximos_pasos']}]")
+                        st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
                         st.caption(f"📅 Última Gestión: {row['ultima_gestion']}")
                     
                     st.markdown("**📜 Historial de Gestión**")
                     bit_str = str(row['bitacora'])
                     if bit_str and bit_str != "-":
                         for entry in bit_str.split(" | "):
-                            if entry.strip(): st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
+                            if entry.strip() and entry != "-": st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
+                    else: st.caption("No hay registros aún.")
                 else:
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
@@ -245,12 +227,10 @@ if check_password():
             com = s1.select_slider("Comunidad", options=[1,2,3,4,5], value=3)
             cap = s2.select_slider("Capacidad", options=[1,2,3,4,5], value=3)
             red = s3.select_slider("Red", options=[1,2,3,4,5], value=3)
-            ctx = st.text_area("Notas iniciales")
-            if st.form_submit_button("🚀 Crear Donante"):
+            if st.form_submit_button("🚀 Crear"):
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     hoy = datetime.now().strftime("%Y-%m-%d")
-                    bit = f"[{datetime.now().strftime('%d/%m')}] Registro inicial"
-                    if ctx: bit = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx} | {bit}"
+                    bit = f"[{datetime.now().strftime('%d/%m')}] Registro"
                     new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": bit, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
                     if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
