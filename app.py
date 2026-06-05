@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI CRM - Elite v9.1", 
+    page_title="DSVI CRM - Elite v9.2", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -56,7 +56,7 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            st.markdown("<p style='text-align: center; color: #9CA3AF;'>ACCESO RESTRINGIDO</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: #9CA3AF;'>SISTEMA DE GESTIÓN PRIVADO</p>", unsafe_allow_html=True)
             password_input = st.text_input("Contraseña:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
@@ -70,6 +70,7 @@ if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
     ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
+    VALORES_METRICAS = ["1", "2", "3", "4", "5"]
 
     def load_data():
         try:
@@ -122,11 +123,39 @@ if check_password():
         c2.metric("META FALTANTE", f"USD {max(0, meta_usd - recaudado):,.0f}")
         c3.metric("CONTACTOS", len(df))
         st.markdown("---")
-        fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
-            gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
-            title={'text': "Progreso"}))
-        fig_g.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
-        st.plotly_chart(fig_g, use_container_width=True)
+        
+        col_g, col_r = st.columns([1, 1.2])
+        with col_g:
+            # FIX DE GRÁFICO: Bloqueamos fuente y márgenes
+            fig_g = go.Figure(go.Indicator(
+                mode = "gauge+number", 
+                value = recaudado,
+                domain = {'x': [0, 1], 'y': [0, 1]},
+                number = {'font': {'size': 60}, 'valueformat': ',.0f', 'prefix': '$'},
+                gauge = {
+                    'axis': {'range': [0, meta_usd], 'tickwidth': 1, 'tickcolor': "white"},
+                    'bar': {'color': "#10B981"},
+                    'bgcolor': "rgba(255,255,255,0.05)",
+                    'borderwidth': 0
+                },
+                title = {'text': "Progreso de Recaudación", 'font': {'size': 20}}
+            ))
+            fig_g.update_layout(
+                height=300, 
+                margin=dict(l=30, r=30, t=50, b=20), 
+                paper_bgcolor='rgba(0,0,0,0)', 
+                font={'color': "white"}
+            )
+            st.plotly_chart(fig_g, use_container_width=True)
+            
+        with col_r:
+            st.subheader("USD por Responsable")
+            resp_m = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
+            if not resp_m.empty:
+                fig_bar = px.bar(resp_m, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3B82F6'])
+                fig_bar.update_layout(xaxis={'showgrid': False}, yaxis={'showgrid': False}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=300, margin=dict(l=10, r=10, t=10, b=10))
+                st.plotly_chart(fig_bar, use_container_width=True)
+
         st.subheader("🏆 Tabla de Honor")
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
         st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")})
@@ -152,10 +181,10 @@ if check_password():
                 if parts and len(parts[0]) > 2:
                     last_note = f" | 💬 {parts[0][:40]}..."
 
-            with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['responsable']}{urg_icon}{last_note}"):
+            with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['estado']}{urg_icon}{last_note}"):
                 c1, c2 = st.columns([2, 1])
                 with c1:
-                    st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
+                    st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}] | **Encargado:** {row['responsable']}")
                 with c2:
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
                     if wa_url:
@@ -189,7 +218,7 @@ if check_password():
                         st.markdown("📝 **Nueva Nota de Gestión**")
                         new_note = st.text_input("¿Qué novedades hay hoy?")
                         st.markdown("---")
-                        st.markdown("**Calificación Estratégica (1 a 5)**")
+                        st.markdown("**Calificación Sergio (1 a 5)**")
                         sc1, sc2, sc3 = st.columns(3)
                         u_com = sc1.slider("Comunidad", 1, 5, int(float(row['comunidad'])) if str(row['comunidad']).isdigit() else 3, key=f"s1_{row['id']}")
                         u_cap = sc2.slider("Capacidad", 1, 5, int(float(row['capacidad'])) if str(row['capacidad']).isdigit() else 3, key=f"s2_{row['id']}")
@@ -227,7 +256,7 @@ if check_password():
             com = s1.select_slider("Comunidad", options=[1,2,3,4,5], value=3)
             cap = s2.select_slider("Capacidad", options=[1,2,3,4,5], value=3)
             red = s3.select_slider("Red", options=[1,2,3,4,5], value=3)
-            if st.form_submit_button("🚀 Crear"):
+            if st.form_submit_button("🚀 Crear Donante"):
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     hoy = datetime.now().strftime("%Y-%m-%d")
