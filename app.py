@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI CRM - Elite v8.2", 
+    page_title="DSVI CRM - Elite v8.3", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -22,9 +22,8 @@ st.markdown("""
     .block-container { padding-top: 2rem !important; }
     .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
     .log-entry { background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid #1E3A8A; font-size: 14px; }
-    /* Badges de urgencia */
-    .badge-alert { background-color: #991B1B; color: white; padding: 2px 8px; border-radius: 5px; font-size: 12px; font-weight: bold; margin-left: 10px; }
-    .badge-warning { background-color: #92400E; color: white; padding: 2px 8px; border-radius: 5px; font-size: 12px; font-weight: bold; margin-left: 10px; }
+    /* Ajuste para que el menú mobile sea visible */
+    [data-testid="stSidebarCollapsedControl"] { color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -79,9 +78,8 @@ if check_password():
             if data is None or data.empty: return pd.DataFrame()
             data.columns = [str(c).strip() for c in data.columns]
             if "ascendencia" in data.columns: data = data.rename(columns={"ascendencia": "comunidad"})
-            for m in ["comunidad", "capacidad", "red_contactos", "bitacora"]:
+            for m in ["comunidad", "capacidad", "red_contactos", "bitacora", "ultima_gestion"]:
                 if m not in data.columns: data[m] = "-"
-            if "ultima_gestion" not in data.columns: data["ultima_gestion"] = datetime.now().strftime("%Y-%m-%d")
             for col in ['monto_confirmado', 'monto_sugerido']:
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
             for col in data.columns:
@@ -124,12 +122,13 @@ if check_password():
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {max(0, meta_usd - recaudado):,.0f}")
         c3.metric("TOTAL CONTACTOS", len(df))
+        
         st.markdown("---")
         col_g, col_r = st.columns([1, 1.2])
         with col_g:
             fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
                 gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
-                title={'text': "Progreso"}))
+                title={'text': "Avance vs Meta"}))
             fig_g.update_layout(height=350, margin=dict(l=40, r=40, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_g, use_container_width=True)
         with col_r:
@@ -137,6 +136,14 @@ if check_password():
             resp_m = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
             if not resp_m.empty:
                 st.plotly_chart(px.bar(resp_m, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3B82F6']), use_container_width=True)
+            else: st.info("Sin recaudación confirmada aún.")
+
+        st.markdown("---")
+        st.subheader("🏆 Tabla de Honor (Donaciones Confirmadas)")
+        df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
+        if not df_honor.empty:
+            st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("Monto USD", format="$ %.0f")})
+        else: st.info("No hay donaciones confirmadas para mostrar aún.")
 
     # --- VISTA: PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
@@ -147,8 +154,6 @@ if check_password():
         for idx, row in df_f.iterrows():
             urg_label = get_urgencia_label(row['ultima_gestion'])
             emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
-            
-            # TÍTULO LIMPIO: Emoji Estado + Nombre + Urgencia (solo si existe)
             with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['responsable']}{urg_label}"):
                 c1, c2 = st.columns([2, 1])
                 with c1:
@@ -157,7 +162,7 @@ if check_password():
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
                     if wa_url:
                         st.markdown(f'<a href="{wa_url}" target="_blank"><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="35" class="wa-icon"></a>', unsafe_allow_html=True)
-
+                
                 is_edit = st.toggle("✏️ Abrir Gestión", key=f"ed_{row['id']}")
                 if not is_edit:
                     st.markdown("---")
@@ -168,13 +173,11 @@ if check_password():
                     with col_r:
                         st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
                         st.caption(f"📅 Última Gestión: {row['ultima_gestion']}")
-                    
                     st.markdown("**📜 Bitácora Histórica**")
                     bit_str = str(row['bitacora'])
                     if bit_str and bit_str != "-":
                         for entry in bit_str.split(" | "):
                             if entry.strip(): st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
-                    else: st.caption("No hay registros aún.")
                 else:
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
@@ -229,6 +232,7 @@ if check_password():
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     hoy = datetime.now().strftime("%Y-%m-%d")
-                    bit = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx}" if ctx else f"[{datetime.now().strftime('%d/%m')}] Registro"
+                    bit = f"[{datetime.now().strftime('%d/%m')}] Registro"
+                    if ctx: bit = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx} | {bit}"
                     new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": bit, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
                     if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
