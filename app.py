@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI CRM - Elite v8.3", 
+    page_title="DSVI CRM - Elite v9.0", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -39,8 +39,8 @@ def get_urgencia_label(fecha_str):
         if not fecha_str or str(fecha_str) == "-": return ""
         fecha_dt = datetime.strptime(str(fecha_str), "%Y-%m-%d")
         dias = (datetime.now() - fecha_dt).days
-        if dias >= 7: return " 🚨 ESTANCADO"
-        if dias >= 3: return " ⚠️ SEGUIMIENTO"
+        if dias >= 7: return " 🚨"
+        if dias >= 3: return " ⚠️"
         return ""
     except: return ""
 
@@ -63,7 +63,8 @@ def check_password():
                 if password_input == st.secrets["auth"]["password"]:
                     st.session_state.authenticated = True
                     st.rerun()
-                else: st.error("❌ Clave incorrecta")
+                else:
+                    st.error("❌ Clave incorrecta")
     return False
 
 if check_password():
@@ -116,29 +117,23 @@ if check_password():
 
     # --- VISTA: DASHBOARD ---
     if menu == "📊 Dashboard":
-        st.title("Panel Ejecutivo")
+        st.title("Panel Ejecutivo de Recaudación")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
+        
         c1, c2, c3 = st.columns(3)
         c1.metric("RECAUDADO REAL", f"USD {recaudado:,.0f}")
         c2.metric("META FALTANTE", f"USD {max(0, meta_usd - recaudado):,.0f}")
-        c3.metric("TOTAL CONTACTOS", len(df))
+        c3.metric("CONTACTOS", len(df))
         
         st.markdown("---")
-        col_g, col_r = st.columns([1, 1.2])
-        with col_g:
-            fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
-                gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
-                title={'text': "Avance vs Meta"}))
-            fig_g.update_layout(height=350, margin=dict(l=40, r=40, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
-            st.plotly_chart(fig_g, use_container_width=True)
-        with col_r:
-            st.subheader("USD por Responsable")
-            resp_m = df[df['estado'] == "6. Donación Confirmada"].groupby('responsable')['monto_confirmado'].sum().sort_values().reset_index()
-            if not resp_m.empty:
-                st.plotly_chart(px.bar(resp_m, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3B82F6']), use_container_width=True)
-            else: st.info("Sin recaudación confirmada aún.")
+        
+        # Gráfico Gauge Centralizado
+        fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
+            gauge={'axis': {'range': [0, meta_usd]}, 'bar': {'color': "#10B981"}, 'bgcolor': "rgba(255,255,255,0.05)"},
+            title={'text': "Progreso vs Meta"}))
+        fig_g.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+        st.plotly_chart(fig_g, use_container_width=True)
 
-        st.markdown("---")
         st.subheader("🏆 Tabla de Honor (Donaciones Confirmadas)")
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
         if not df_honor.empty:
@@ -148,13 +143,34 @@ if check_password():
     # --- VISTA: PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
-        search = st.text_input("🔍 Buscar...").lower()
-        df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
         
+        # MEJORA: Filtros Rápidos
+        f_col1, f_col2 = st.columns(2)
+        filtro_resp = f_col1.multiselect("Filtrar por Responsable", LISTA_RESPONSABLES, default=LISTA_RESPONSABLES)
+        filtro_est = f_col2.multiselect("Filtrar por Estado", ESTADOS, default=ESTADOS)
+        
+        search = st.text_input("🔍 Buscar por Nombre, Notas o Familia...").lower()
+        
+        # Aplicar filtros
+        df_f = df[df['responsable'].isin(filtro_resp) & df['estado'].isin(filtro_est)]
+        if search:
+            df_f = df_f[df_f.apply(lambda r: search in str(r).lower(), axis=1)]
+
+        st.caption(f"Mostrando {len(df_f)} de {len(df)} contactos.")
+
         for idx, row in df_f.iterrows():
-            urg_label = get_urgencia_label(row['ultima_gestion'])
+            urg_icon = get_urgencia_label(row['ultima_gestion'])
             emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
-            with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['responsable']}{urg_label}"):
+            
+            # MEJORA: Obtener última nota para el header
+            last_note = ""
+            if str(row['bitacora']) != "-":
+                parts = str(row['bitacora']).split(" | ")
+                if parts:
+                    last_note = f" | 💬 {parts[0][:40]}..." # Tomamos los primeros 40 caracteres
+
+            with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['responsable']}{urg_icon}{last_note}"):
+                
                 c1, c2 = st.columns([2, 1])
                 with c1:
                     st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
@@ -163,17 +179,19 @@ if check_password():
                     if wa_url:
                         st.markdown(f'<a href="{wa_url}" target="_blank"><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="35" class="wa-icon"></a>', unsafe_allow_html=True)
                 
-                is_edit = st.toggle("✏️ Abrir Gestión", key=f"ed_{row['id']}")
+                is_edit = st.toggle("✏️ Editar / Registrar Gestión", key=f"ed_{row['id']}")
                 if not is_edit:
                     st.markdown("---")
                     col_l, col_r = st.columns(2)
                     with col_l:
                         st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
                         st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
+                        st.write(f"⭐ **Comunidad:** {render_stars(row['comunidad'])} | 💰 **Capacidad:** {render_stars(row['capacidad'])}")
                     with col_r:
-                        st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
+                        st.write(f"🚀 **Próximo:** :orange[{row['proximos_pasos']}]")
                         st.caption(f"📅 Última Gestión: {row['ultima_gestion']}")
-                    st.markdown("**📜 Bitácora Histórica**")
+                    
+                    st.markdown("**📜 Historial de Gestión**")
                     bit_str = str(row['bitacora'])
                     if bit_str and bit_str != "-":
                         for entry in bit_str.split(" | "):
@@ -187,9 +205,9 @@ if check_password():
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos'])
                         st.markdown("📝 **Nueva Nota de Gestión**")
-                        new_note = st.text_input("Escribe qué se habló hoy:")
+                        new_note = st.text_input("¿Qué novedades hay hoy?")
                         st.markdown("---")
-                        st.markdown("**Calificación Sergio (1 a 5)**")
+                        st.markdown("**Calificación Estratégica (1 a 5)**")
                         sc1, sc2, sc3 = st.columns(3)
                         u_com = sc1.slider("Comunidad", 1, 5, int(float(row['comunidad'])) if str(row['comunidad']).isdigit() else 3, key=f"s1_{row['id']}")
                         u_cap = sc2.slider("Capacidad", 1, 5, int(float(row['capacidad'])) if str(row['capacidad']).isdigit() else 3, key=f"s2_{row['id']}")
@@ -232,7 +250,7 @@ if check_password():
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     hoy = datetime.now().strftime("%Y-%m-%d")
-                    bit = f"[{datetime.now().strftime('%d/%m')}] Registro"
+                    bit = f"[{datetime.now().strftime('%d/%m')}] Registro inicial"
                     if ctx: bit = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx} | {bit}"
                     new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": bit, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
                     if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
