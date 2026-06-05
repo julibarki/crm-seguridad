@@ -124,7 +124,7 @@ if check_password():
         st.rerun()
     
     st.sidebar.markdown("---")
-    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=500000.0, step=10000.0)
+    meta_usd = st.sidebar.number_input("Meta Global (USD)", value=24000.0, step=10000.0)
     menu = st.sidebar.radio("Ir a:", ["📊 Dashboard", "👥 Pipeline Operativo", "🔎 Análisis Consultoría", "🆕 Registro Nuevo"])
     if st.sidebar.button("🔄 Sincronizar Ahora"): st.cache_data.clear(); st.rerun()
 
