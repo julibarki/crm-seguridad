@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI CRM - Elite v8.0", 
+    page_title="DSVI CRM - Elite v8.1", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -21,7 +21,6 @@ st.markdown("""
     [data-testid="stMetricValue"] { font-size: 28px !important; font-weight: 800 !important; }
     .block-container { padding-top: 2rem !important; }
     .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
-    /* Estilos para la Bitácora */
     .log-entry { background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid #1E3A8A; font-size: 14px; }
     </style>
 """, unsafe_allow_html=True)
@@ -35,8 +34,8 @@ def render_stars(rating):
 
 def get_semaforo(fecha_str):
     try:
-        if not fecha_str or fecha_str == "-": return "⚪"
-        fecha_dt = datetime.strptime(fecha_str, "%Y-%m-%d")
+        if not fecha_str or str(fecha_str) == "-": return "⚪"
+        fecha_dt = datetime.strptime(str(fecha_str), "%Y-%m-%d")
         dias = (datetime.now() - fecha_dt).days
         if dias >= 7: return "🔴"
         if dias >= 3: return "🟡"
@@ -57,7 +56,6 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            st.markdown("<p style='text-align: center; color: #9CA3AF;'>SISTEMA DE GESTIÓN PRIVADO</p>", unsafe_allow_html=True)
             password_input = st.text_input("Contraseña de acceso:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
@@ -79,16 +77,19 @@ if check_password():
             if data is None or data.empty: return pd.DataFrame()
             data.columns = [str(c).strip() for c in data.columns]
             
-            # Asegurar nuevas columnas de Bitácora y Última Gestión
+            # Asegurar columnas nuevas con limpieza
             columnas_necesarias = {
                 "comunidad": "3", "capacidad": "3", "red_contactos": "3",
-                "bitacora": "", "ultima_gestion": datetime.now().strftime("%Y-%m-%d")
+                "bitacora": "-", "ultima_gestion": datetime.now().strftime("%Y-%m-%d")
             }
             for col, default in columnas_necesarias.items():
                 if col not in data.columns: data[col] = default
             
+            # Sanitizar montos
             for col in ['monto_confirmado', 'monto_sugerido']:
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
+            
+            # Sanitizar textos y forzar Bitácora a String
             for col in data.columns:
                 if col not in ['monto_confirmado', 'monto_sugerido']:
                     data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
@@ -182,9 +183,12 @@ if check_password():
                         st.caption(f"📅 Última Gestión: {row['ultima_gestion']}")
                     
                     st.markdown("**📜 Bitácora Histórica**")
-                    if row['bitacora'] and row['bitacora'] != "-":
-                        for entry in row['bitacora'].split(" | "):
-                            st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
+                    # FIX CRÍTICO: Asegurar que tratamos la bitácora como string
+                    bitacora_str = str(row['bitacora'])
+                    if bitacora_str and bitacora_str != "-":
+                        for entry in bitacora_str.split(" | "):
+                            if entry.strip():
+                                st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
                     else:
                         st.caption("No hay registros de gestión aún.")
                 
@@ -209,9 +213,8 @@ if check_password():
                         
                         if st.form_submit_button("💾 GUARDAR CAMBIOS Y NOTA"):
                             target_id = str(row['id'])
-                            # Preparar bitácora
                             fecha_hoy = datetime.now().strftime("%d/%m")
-                            bitacora_actual = row['bitacora'] if row['bitacora'] != "-" else ""
+                            bitacora_actual = str(row['bitacora']) if str(row['bitacora']) != "-" else ""
                             if new_note:
                                 nueva_entrada = f"[{fecha_hoy}] {new_note}"
                                 bitacora_actual = f"{nueva_entrada} | {bitacora_actual}" if bitacora_actual else nueva_entrada
@@ -250,5 +253,6 @@ if check_password():
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     hoy = datetime.now().strftime("%Y-%m-%d")
-                    new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx}", "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
+                    bit_init = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx}" if ctx else f"[{datetime.now().strftime('%d/%m')}] Registro inicial"
+                    new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": bit_init, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
                     if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
