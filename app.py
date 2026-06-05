@@ -8,7 +8,7 @@ import urllib.parse
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="DSVI CRM - Elite v8.1", 
+    page_title="DSVI CRM - Elite v8.2", 
     layout="wide", 
     page_icon="🛡️",
     initial_sidebar_state="expanded"
@@ -22,6 +22,9 @@ st.markdown("""
     .block-container { padding-top: 2rem !important; }
     .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
     .log-entry { background-color: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid #1E3A8A; font-size: 14px; }
+    /* Badges de urgencia */
+    .badge-alert { background-color: #991B1B; color: white; padding: 2px 8px; border-radius: 5px; font-size: 12px; font-weight: bold; margin-left: 10px; }
+    .badge-warning { background-color: #92400E; color: white; padding: 2px 8px; border-radius: 5px; font-size: 12px; font-weight: bold; margin-left: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -32,22 +35,21 @@ def render_stars(rating):
         return "⭐" * r if r > 0 else "---"
     except: return "---"
 
-def get_semaforo(fecha_str):
+def get_urgencia_label(fecha_str):
     try:
-        if not fecha_str or str(fecha_str) == "-": return "⚪"
+        if not fecha_str or str(fecha_str) == "-": return ""
         fecha_dt = datetime.strptime(str(fecha_str), "%Y-%m-%d")
         dias = (datetime.now() - fecha_dt).days
-        if dias >= 7: return "🔴"
-        if dias >= 3: return "🟡"
-        return "🟢"
-    except: return "⚪"
+        if dias >= 7: return " 🚨 ESTANCADO"
+        if dias >= 3: return " ⚠️ SEGUIMIENTO"
+        return ""
+    except: return ""
 
 # --- FUNCIÓN DE LOGIN ---
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
-    if st.session_state.authenticated:
-        return True
+    if st.session_state.authenticated: return True
     st.markdown("""
         <style> .logo-text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 900; 
         font-size: 100px; letter-spacing: -5px; color: #FFFFFF; text-align: center; margin-top: 80px; } </style>
@@ -56,13 +58,13 @@ def check_password():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            password_input = st.text_input("Contraseña de acceso:", type="password")
+            st.markdown("<p style='text-align: center; color: #9CA3AF;'>SISTEMA DE GESTIÓN PRIVADO</p>", unsafe_allow_html=True)
+            password_input = st.text_input("Contraseña:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
                     st.session_state.authenticated = True
                     st.rerun()
-                else:
-                    st.error("❌ Clave incorrecta")
+                else: st.error("❌ Clave incorrecta")
     return False
 
 if check_password():
@@ -76,20 +78,12 @@ if check_password():
             data = conn.read(ttl=0)
             if data is None or data.empty: return pd.DataFrame()
             data.columns = [str(c).strip() for c in data.columns]
-            
-            # Asegurar columnas nuevas con limpieza
-            columnas_necesarias = {
-                "comunidad": "3", "capacidad": "3", "red_contactos": "3",
-                "bitacora": "-", "ultima_gestion": datetime.now().strftime("%Y-%m-%d")
-            }
-            for col, default in columnas_necesarias.items():
-                if col not in data.columns: data[col] = default
-            
-            # Sanitizar montos
+            if "ascendencia" in data.columns: data = data.rename(columns={"ascendencia": "comunidad"})
+            for m in ["comunidad", "capacidad", "red_contactos", "bitacora"]:
+                if m not in data.columns: data[m] = "-"
+            if "ultima_gestion" not in data.columns: data["ultima_gestion"] = datetime.now().strftime("%Y-%m-%d")
             for col in ['monto_confirmado', 'monto_sugerido']:
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
-            
-            # Sanitizar textos y forzar Bitácora a String
             for col in data.columns:
                 if col not in ['monto_confirmado', 'monto_sugerido']:
                     data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
@@ -131,7 +125,6 @@ if check_password():
         c2.metric("META FALTANTE", f"USD {max(0, meta_usd - recaudado):,.0f}")
         c3.metric("TOTAL CONTACTOS", len(df))
         st.markdown("---")
-        
         col_g, col_r = st.columns([1, 1.2])
         with col_g:
             fig_g = go.Figure(go.Indicator(mode="gauge+number", value=recaudado,
@@ -145,10 +138,6 @@ if check_password():
             if not resp_m.empty:
                 st.plotly_chart(px.bar(resp_m, x='monto_confirmado', y='responsable', orientation='h', color_discrete_sequence=['#3B82F6']), use_container_width=True)
 
-        st.subheader("🏆 Tabla de Honor")
-        df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
-        st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")})
-
     # --- VISTA: PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
@@ -156,42 +145,36 @@ if check_password():
         df_f = df[df.apply(lambda r: search in str(r).lower(), axis=1)] if search else df
         
         for idx, row in df_f.iterrows():
-            semaforo = get_semaforo(row['ultima_gestion'])
+            urg_label = get_urgencia_label(row['ultima_gestion'])
             emoji = "🟢" if row['estado'] == "6. Donación Confirmada" else "🔴" if row['estado'] == "7. Rechazó" else "🟡"
             
-            with st.expander(f"{semaforo} {emoji} {row['nombre']} {row['apellido']} | {row['estado']}"):
-                
+            # TÍTULO LIMPIO: Emoji Estado + Nombre + Urgencia (solo si existe)
+            with st.expander(f"{emoji} {row['nombre']} {row['apellido']} | {row['responsable']}{urg_label}"):
                 c1, c2 = st.columns([2, 1])
                 with c1:
-                    st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}] | **Encargado:** {row['responsable']}")
+                    st.markdown(f"💰 **Confirmado:** :green[USD {float(row['monto_confirmado']):,.0f}]")
                 with c2:
                     wa_url = make_whatsapp_link(row['telefono'], row['nombre'])
                     if wa_url:
                         st.markdown(f'<a href="{wa_url}" target="_blank"><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="35" class="wa-icon"></a>', unsafe_allow_html=True)
 
-                is_edit = st.toggle("✏️ Editar / Registrar Gestión", key=f"ed_{row['id']}")
-                
+                is_edit = st.toggle("✏️ Abrir Gestión", key=f"ed_{row['id']}")
                 if not is_edit:
                     st.markdown("---")
                     col_l, col_r = st.columns(2)
                     with col_l:
-                        st.write(f"📞 **Tel:** {row['telefono']}")
-                        st.write(f"💼 **Rubro:** {row['rubro']}")
+                        st.write(f"📞 **Tel:** {row['telefono']} | 💼 **Rubro:** {row['rubro']}")
                         st.write(f"🏠 **Resid:** {row['residencia']} | 👨‍👩‍👧 **Fam:** {row['grupo_familiar']}")
                     with col_r:
                         st.write(f"🚀 **Paso:** :orange[{row['proximos_pasos']}]")
                         st.caption(f"📅 Última Gestión: {row['ultima_gestion']}")
                     
                     st.markdown("**📜 Bitácora Histórica**")
-                    # FIX CRÍTICO: Asegurar que tratamos la bitácora como string
-                    bitacora_str = str(row['bitacora'])
-                    if bitacora_str and bitacora_str != "-":
-                        for entry in bitacora_str.split(" | "):
-                            if entry.strip():
-                                st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
-                    else:
-                        st.caption("No hay registros de gestión aún.")
-                
+                    bit_str = str(row['bitacora'])
+                    if bit_str and bit_str != "-":
+                        for entry in bit_str.split(" | "):
+                            if entry.strip(): st.markdown(f'<div class="log-entry">{entry}</div>', unsafe_allow_html=True)
+                    else: st.caption("No hay registros aún.")
                 else:
                     with st.form(key=f"f_edit_{row['id']}"):
                         f1, f2, f3 = st.columns(3)
@@ -200,28 +183,21 @@ if check_password():
                         u_est = f2.selectbox("Estado", ESTADOS, index=ESTADOS.index(row['estado']) if row['estado'] in ESTADOS else 0); u_rub = f3.text_input("Rubro", row['rubro'])
                         u_sug = f1.number_input("Sugerido", value=float(row['monto_sugerido'])); u_conf = f2.number_input("Confirmado", value=float(row['monto_confirmado'])); u_res = f3.text_input("Residencia", row['residencia'])
                         u_fam = f1.text_input("Familia", row['grupo_familiar']); u_pas = f2.text_input("Próximo Paso", row['proximos_pasos'])
-                        
+                        st.markdown("📝 **Nueva Nota de Gestión**")
+                        new_note = st.text_input("Escribe qué se habló hoy:")
                         st.markdown("---")
-                        st.markdown("📝 **Añadir Gestión a la Bitácora**")
-                        new_note = st.text_input("Nueva nota (ej: Hablé con él, está interesado)")
-                        
-                        st.markdown("---")
-                        s_c1, s_c2, s_c3 = st.columns(3)
-                        u_com = s_c1.slider("Comunidad", 1, 5, int(float(row['comunidad'])) if str(row['comunidad']).isdigit() else 3, key=f"s1_{row['id']}")
-                        u_cap = s_c2.slider("Capacidad Econ.", 1, 5, int(float(row['capacidad'])) if str(row['capacidad']).isdigit() else 3, key=f"s2_{row['id']}")
-                        u_red = s_c3.slider("Red de Contactos", 1, 5, int(float(row['red_contactos'])) if str(row['red_contactos']).isdigit() else 3, key=f"s3_{row['id']}")
-                        
-                        if st.form_submit_button("💾 GUARDAR CAMBIOS Y NOTA"):
-                            target_id = str(row['id'])
+                        st.markdown("**Calificación Sergio (1 a 5)**")
+                        sc1, sc2, sc3 = st.columns(3)
+                        u_com = sc1.slider("Comunidad", 1, 5, int(float(row['comunidad'])) if str(row['comunidad']).isdigit() else 3, key=f"s1_{row['id']}")
+                        u_cap = sc2.slider("Capacidad", 1, 5, int(float(row['capacidad'])) if str(row['capacidad']).isdigit() else 3, key=f"s2_{row['id']}")
+                        u_red = sc3.slider("Red", 1, 5, int(float(row['red_contactos'])) if str(row['red_contactos']).isdigit() else 3, key=f"s3_{row['id']}")
+                        if st.form_submit_button("💾 GUARDAR CAMBIOS"):
                             fecha_hoy = datetime.now().strftime("%d/%m")
-                            bitacora_actual = str(row['bitacora']) if str(row['bitacora']) != "-" else ""
+                            bit_actual = str(row['bitacora']) if str(row['bitacora']) != "-" else ""
                             if new_note:
-                                nueva_entrada = f"[{fecha_hoy}] {new_note}"
-                                bitacora_actual = f"{nueva_entrada} | {bitacora_actual}" if bitacora_actual else nueva_entrada
-                            
-                            df.loc[df['id'] == target_id, ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','proximos_pasos','comunidad','capacidad','red_contactos','bitacora','ultima_gestion']] = [
-                                u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_pas, str(u_com), str(u_cap), str(u_red), bitacora_actual, datetime.now().strftime("%Y-%m-%d")
-                            ]
+                                ne = f"[{fecha_hoy}] {new_note}"
+                                bit_actual = f"{ne} | {bit_actual}" if bit_actual else ne
+                            df.loc[df['id'] == str(row['id']), ['nombre','apellido','responsable','estado','monto_sugerido','monto_confirmado','telefono','residencia','grupo_familiar','rubro','proximos_pasos','comunidad','capacidad','red_contactos','bitacora','ultima_gestion']] = [u_nom, u_ape, u_resp, u_est, u_sug, u_conf, u_tel, u_res, u_fam, u_rub, u_pas, str(u_com), str(u_cap), str(u_red), bit_actual, datetime.now().strftime("%Y-%m-%d")]
                             if save_data(df): st.rerun()
                     if st.button("🗑️ ELIMINAR", key=f"del_{row['id']}"):
                         df = df[df['id'] != str(row['id'])]
@@ -246,13 +222,13 @@ if check_password():
             st.markdown("---")
             s1, s2, s3 = st.columns(3)
             com = s1.select_slider("Comunidad", options=[1,2,3,4,5], value=3)
-            cap = s2.select_slider("Capacidad Econ.", options=[1,2,3,4,5], value=3)
-            red = s3.select_slider("Red de Contactos", options=[1,2,3,4,5], value=3)
+            cap = s2.select_slider("Capacidad", options=[1,2,3,4,5], value=3)
+            red = s3.select_slider("Red", options=[1,2,3,4,5], value=3)
             ctx = st.text_area("Notas iniciales")
             if st.form_submit_button("🚀 Crear Donante"):
                 if n:
                     new_id = str(int(datetime.now().timestamp()))
                     hoy = datetime.now().strftime("%Y-%m-%d")
-                    bit_init = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx}" if ctx else f"[{datetime.now().strftime('%d/%m')}] Registro inicial"
-                    new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": bit_init, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
+                    bit = f"[{datetime.now().strftime('%d/%m')}] Creado: {ctx}" if ctx else f"[{datetime.now().strftime('%d/%m')}] Registro"
+                    new_row = pd.DataFrame([{"id": new_id, "nombre": n, "apellido": a, "responsable": r, "monto_sugerido": s, "estado": "1. Por contactar", "monto_confirmado": 0.0, "fecha_registro": hoy, "ultima_gestion": hoy, "telefono": "-", "rubro": "-", "bitacora": bit, "residencia": "-", "grupo_familiar": "-", "proximos_pasos": "-", "comunidad": str(com), "capacidad": str(cap), "red_contactos": str(red) }])
                     if save_data(pd.concat([df, new_row], ignore_index=True)): st.success("¡Registrado!"); st.rerun()
