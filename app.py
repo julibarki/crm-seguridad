@@ -14,30 +14,39 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS DE PRECISIÓN QUIRÚRGICA: OCULTA GITHUB, PROTEGE MENÚ ---
+# --- CSS DE INGENIERÍA: BLINDAJE DE MENÚ Y OCULTAMIENTO DE GITHUB ---
 st.markdown("""
     <style>
-    /* 1. Ocultar los botones de la derecha: GitHub, Share y Deploy */
-    [data-testid="stToolbar"] { display: none !important; }
-    .stAppDeployButton { display: none !important; }
-    [data-testid="stDecoration"] { display: none !important; }
-    
-    /* 2. Asegurar que el Header no tenga fondo pero permita clics en la izquierda */
-    header { background-color: rgba(0,0,0,0) !important; }
+    /* 1. Ocultar la línea de color superior y el botón de Deploy */
+    [data-testid="stDecoration"], .stAppDeployButton {
+        display: none !important;
+    }
 
-    /* 3. Forzar visibilidad y color del botón de menú (hamburguesa) */
-    button[data-testid="stBaseButton-headerNoPadding"] {
-        color: white !important;
+    /* 2. Ocultar los iconos de la derecha (GitHub, Share, etc.) sin matar el header */
+    [data-testid="stToolbar"] {
+        visibility: hidden !important;
+    }
+
+    /* 3. BLINDAR EL BOTÓN DEL MENÚ (Hamburguesa) */
+    /* Lo forzamos a ser visible, blanco y estar por encima de todo */
+    [data-testid="stSidebarCollapsedControl"] {
         visibility: visible !important;
         display: flex !important;
+        color: white !important;
+        background-color: rgba(255,255,255,0.1) !important; /* Fondo sutil para encontrarlo fácil */
+        border-radius: 5px !important;
+        z-index: 9999999 !important;
     }
     
-    /* 4. Limpieza general */
+    /* Asegurar que el icono SVG dentro del botón sea blanco */
+    [data-testid="stSidebarCollapsedControl"] svg {
+        fill: white !important;
+    }
+
+    /* 4. Estética General */
     footer {visibility: hidden !important;}
     .block-container { padding-top: 2rem !important; }
     [data-testid="stMetricValue"] { font-size: 28px !important; font-weight: 800 !important; }
-    
-    /* Efecto para WhatsApp */
     .wa-icon:hover { transform: scale(1.1); transition: 0.2s; }
     </style>
 """, unsafe_allow_html=True)
@@ -55,15 +64,17 @@ def check_password():
         st.session_state.authenticated = False
     if st.session_state.authenticated:
         return True
+    
     st.markdown("""
         <style> .logo-text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 900; 
         font-size: 100px; letter-spacing: -5px; color: #FFFFFF; text-align: center; margin-top: 80px; } </style>
         <div class="logo-text">DSVI</div>
     """, unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.container(border=True):
-            st.markdown("<p style='text-align: center; color: #9CA3AF;'>SISTEMA DE GESTIÓN PRIVADO</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: #9CA3AF;'>ACCESO RESTRINGIDO</p>", unsafe_allow_html=True)
             password_input = st.text_input("Ingresa la clave:", type="password")
             if st.button("Ingresar", use_container_width=True):
                 if password_input == st.secrets["auth"]["password"]:
@@ -75,6 +86,7 @@ def check_password():
 
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
+    
     LISTA_RESPONSABLES = ["Equipo General", "Avir", "Asher", "Kamer", "Jesef", "Adan", "Itza", "Kaleb", "Wyatt"]
     ESTADOS = ["1. Por contactar", "2. Primer mensaje enviado", "3. Reunión pactada", "4. Reunión realizada", "5. Aceptó donar (Falta definir monto)", "6. Donación Confirmada", "7. Rechazó"]
     VALORES_METRICAS = ["1", "2", "3", "4", "5"]
@@ -84,18 +96,11 @@ if check_password():
             data = conn.read(ttl=0)
             if data is None or data.empty: return pd.DataFrame()
             data.columns = [str(c).strip() for c in data.columns]
-            
-            # Migración: Ascendencia -> Comunidad
-            if "ascendencia" in data.columns and "comunidad" not in data.columns:
-                data = data.rename(columns={"ascendencia": "comunidad"})
-            
-            # Asegurar columnas Sergio
+            if "ascendencia" in data.columns: data = data.rename(columns={"ascendencia": "comunidad"})
             for m in ["comunidad", "capacidad", "red_contactos"]:
                 if m not in data.columns: data[m] = "3"
-            
             for col in ['monto_confirmado', 'monto_sugerido']:
                 if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(float)
-            
             for col in data.columns:
                 if col not in ['monto_confirmado', 'monto_sugerido']:
                     data[col] = data[col].astype(str).replace(['nan', 'None', '<NA>'], '-')
@@ -115,7 +120,7 @@ if check_password():
     def make_whatsapp_link(phone, name):
         clean_phone = ''.join(filter(str.isdigit, str(phone)))
         if not clean_phone or clean_phone == "-": return None
-        msg = urllib.parse.quote(f"Hola {name}, ¿cómo estás? Te contacto de DSVI...")
+        msg = urllib.parse.quote(f"Hola {name}, te contacto de DSVI por el Proyecto de Seguridad...")
         return f"https://wa.me/{clean_phone}?text={msg}"
 
     df = load_data()
@@ -129,7 +134,7 @@ if check_password():
     menu = st.sidebar.radio("Navegación:", ["📊 Dashboard", "👥 Pipeline Operativo", "🔎 Análisis Consultoría", "🆕 Registro Nuevo"])
     if st.sidebar.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 
-    # --- DASHBOARD ---
+    # --- VISTA: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.title("Panel Ejecutivo")
         recaudado = float(df[df['estado'] == "6. Donación Confirmada"]['monto_confirmado'].sum()) if not df.empty else 0
@@ -154,7 +159,7 @@ if check_password():
         df_honor = df[df['estado'] == "6. Donación Confirmada"][['nombre', 'apellido', 'monto_confirmado', 'responsable']].sort_values(by='monto_confirmado', ascending=False)
         st.dataframe(df_honor, use_container_width=True, hide_index=True, column_config={"monto_confirmado": st.column_config.NumberColumn("USD", format="$ %.0f")})
 
-    # --- PIPELINE ---
+    # --- VISTA: PIPELINE ---
     elif menu == "👥 Pipeline Operativo":
         st.title("Gestión de Prospectos")
         search = st.text_input("🔍 Buscar...").lower()
